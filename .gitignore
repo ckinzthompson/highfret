@@ -1,0 +1,15 @@
+*.pyc
+*.nbi
+*.nbc
+__pycache__
+.DS_Store
+build
+dist
+*.egg-info
+env
+*_build
+*.hdf5
+*.dat
+*.traces
+.quarto
+.vscode
