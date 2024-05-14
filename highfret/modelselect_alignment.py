@@ -22,9 +22,18 @@ def polynomial_get_order(a):
 	return K
 
 @nb.njit
+def polynomial_transform_many(x,y,a,b,K):
+	ndata = x.size
+	xp = np.zeros(ndata)
+	yp = np.zeros(ndata)
+	for i in range(ndata):
+		xp[i],yp[i] = polynomial_transform(x[i],y[i],a,b,K)
+	return xp,yp
+
+@nb.njit
 def polynomial_transform(x1,y1,a,b,K):
 	'''
-	transforms q(x,y)->w(x',y') where:
+	transforms (x,y)->(x',y') where:
 		x' = sum_{j=0}^K sum_{i=0}^j \alpha_{ji} * x^(j-i) * y^i
 		y' = sum_{j=0}^K sum_{i=0}^j \beta_{ji}  * x^(j-i) * y^i
 	alpha and beta are 1d arrays listed in order of the sum
@@ -87,14 +96,20 @@ def polynomial_transform(x1,y1,a,b,K):
 	return x,y
 
 @nb.njit
-def interpolate_polynomial(q,a,b):
+def rev_interpolate_polynomial(q,a,b):
 	'''
-	transforms q(x,y)->w(x',y') where:
-		x' = sum_{j=0}^K sum_{i=0}^j \alpha_{ji} * x^(j-i) * y^i
-		y' = sum_{j=0}^K sum_{i=0}^j \beta_{ji}  * x^(j-i) * y^i
-	alpha and beta are 1d arrays listed in order of the sum
-	(i.e. a00,a10,a11,a20,a21,a22,a30,a31,a32,a33...etc)
-	Once the pixel containing (x',y') is found, a bilinear interpolation on the nearest neighbor pixels is used to get the corresponding value... not ideal, but good enough
+	Okay a little confusing, but the easiest way to transform an image is actually to work backwards.
+	1. Loop over final coordinates (x',y').
+	2. Use reverse transform (x',y') to (x,y) [note: this is a completely different transform!!! i.e., \theta^\prime not \theta]
+	3. Find neighbor pixels in q(x,y)
+	4. perform a bilinear interpolation of neighbors in q(x,y) to set pixel at w(x',y')
+
+	So, this function transforms q(x,y)->w(x',y') where:
+		x = sum_{j=0}^K sum_{i=0}^j \alpha'_{ji} * x'^(j-i) * y'^i
+		y = sum_{j=0}^K sum_{i=0}^j \beta'_{ji}  * x'^(j-i) * y'^i
+	alpha' and beta' are 1d arrays listed in order of the sum
+	(i.e. a'00,a'10,a'11,a'20,a'21,a'22,a'30,a'31,a'32,a'33...etc)
+	
 	'''
 
 	## initialize everything for speed
@@ -196,11 +211,12 @@ def interpolate_polynomial(q,a,b):
 			out[i,j] = (x2-x)*q[ii,jj]*(y2-y) + (x2-x)*q[ii,jj+1]*(y-y1) + (x-x1)*q[ii+1,jj]*(y2-y) + (x-x1)*q[ii+1,jj+1]*(y-y1)
 	return out
 
-@nb.njit
-def interpolate_linearshift(q,dx,dy):
-	a = np.array((dx,1.,0.))
-	b = np.array((dy,0.,1.))
-	return interpolate_polynomial(q,a,b)
+# @nb.njit
+# def interpolate_linearshift(q,dx,dy):
+# 	dx from 1 to 2, dy from 1 to 2
+# 	a = np.array((-dx,1.,0.))
+# 	b = np.array((-dy,0.,1.))
+# 	return rev_interpolate_polynomial(q,a,b)
 
 
 def check_distorted(q,theta,factor=.5):
@@ -235,7 +251,11 @@ def _fit_wrapper_poly(theta,d1,d2):
 	if check_distorted(d1,theta):
 		# raise Exception('Failure')
 		return np.inf
-	m2 = interpolate_polynomial(d1,a,b) ## approximate d2 using a transform of d1
+	
+	####### okay so the interpolation runs backwards !! that's why this seems reversed for going from 1 to 2
+	### theta is the transform from 1 to 2
+	### rev interp takes 2 into 1 knowing theta from 1 to 2 so we're matching d1 and d2 in space 1
+	m2 = rev_interpolate_polynomial(d2,a,b) ## approximate d2 in 1 using a transform of 1 to 2
 	keep = np.isfinite(m2)
 	# if keep.sum()/float(keep.size)<0.5: ## significant loss of overlap
 	# 	return np.inf
@@ -244,8 +264,8 @@ def _fit_wrapper_poly(theta,d1,d2):
 	# if np.isnan(out):
 	# 	return np.inf
 	# return out/float(keep.sum()) ## use avg/pixel b/c the nans change the data set so it's hard to compare
-	out = -ln_evidence(m2,d2) ## see if the transformed d1 is a good model for d2
-	return out/float(d2.size) ## avg for easily comparable numbers
+	out = -ln_evidence(m2,d1) ## see if the transformed d2 is a good model for d1
+	return out/float(d1.size) ## avg for easily comparable numbers
 
 def coefficients_combine(a,b):
 	return np.concatenate((a,b))
@@ -298,8 +318,6 @@ def alignment_upscaled_fft_phase(d1,d2):
 	output:
 		* polynomial coefficients (K=1) with linear shift
 	'''
-	from skimage import transform
-	from skimage.transform import SimilarityTransform,warp
 	from scipy.interpolate import RectBivariateSpline
 
 	## Calculate Cross-correlation
@@ -335,52 +353,42 @@ def alignment_upscaled_fft_phase(d1,d2):
 	xy = np.nonzero(di==di.max())
 
 	## get interpolated shifts
-	s1 = x[xy[0][0]]
-	s2 = y[xy[1][0]]
-	if s1 > d.shape[0]/2:
-		s1 -= d.shape[0]
-	if s2 > d.shape[1]/2:
-		s2 -= d.shape[1]
+	dx_12 = x[xy[0][0]]
+	dy_12 = y[xy[1][0]]
+	if dx_12 > d.shape[0]/2:
+		dx_12 -= d.shape[0]
+	if dy_12 > d.shape[1]/2:
+		dy_12 -= d.shape[1]
 
-	## calculate warped img
-	tform = SimilarityTransform(translation=(-s2,-s1))
-	transformed1 = warp(d1, tform)
+	return dx_12,dy_12
 
-	theta = coefficients_blank(1)
-	a,b = coefficients_split(theta)
-	a[0] = -s1
-	b[0] = -s2
-	return coefficients_combine(a,b)
 
-def alignment_guess_coefficients(d1,d2,K=1,guess_linear=True):
+def alignment_guess_coefficients(d1,d2):
 	'''
 	Convience function to generate coefficient arrays - d1 into d2
 	input:
 		* d1 - image 1 (Lx,Ly)
 		* d2 - image 2 (Lx,Ly)
-		* K - integer order of polynomial
-		* guess_linear - flag: if True, will populate coefficients with linear shift guess
 	output:
 		* polynomial coefficients (order K)
 	'''
 
-	theta = coefficients_blank(K)
+	theta = coefficients_blank(1)
 	a,b = coefficients_split(theta)
 
-	if guess_linear:
-		## get linear shift from upscaled FT
-		coef_fft = alignment_upscaled_fft_phase(d1,d2)
+	## get linear shift from upscaled FT
+	dx_12,dy_12 = alignment_upscaled_fft_phase(d1,d2)
 
-		## Make grid +/-1, 20 by 20 points = .05 resolution
-		ca,cb = coefficients_split(coef_fft)
-		# xs = np.linspace(ca[0]-1.,ca[0]+1.,20)
-		# ys = np.linspace(cb[0]-1.,cb[0]+1.,20)
-		#
-		# # get MAP solution on local grid
-		# coef_grid = alignment_grid_evidence_linearshift(d1,d2,xs,ys)
-		# ca,cb = coefficients_split(coef_grid)
-		a[0] = ca[0]
-		b[0] = cb[0]
+	# ## Make grid +/-1, 20 by 20 points = .05 resolution
+	# ca,cb = coefficients_split(coef_fft)
+	# # xs = np.linspace(ca[0]-1.,ca[0]+1.,20)
+	# # ys = np.linspace(cb[0]-1.,cb[0]+1.,20)
+	# #
+	# # # get MAP solution on local grid
+	# # coef_grid = alignment_grid_evidence_linearshift(d1,d2,xs,ys)
+	# # ca,cb = coefficients_split(coef_grid)
+	a[0] = dx_12
+	b[0] = dy_12
 
 	return coefficients_combine(a,b)
 
@@ -448,3 +456,43 @@ def upscale_theta(theta,c=2.):
 	theta = coefficients_combine(a,b)
 	return theta
 
+def estimate_polynomial_from_points(xs,ys,xd,yd,order):
+		###	 BSD-3-Clause - the scikit-image team
+		#### ripped from https://github.com/scikit-image/scikit-image/blob/v0.23.2/skimage/transform/_geometric.py#L1568
+		##### s is source, d is destination
+		
+		ndata = xs.size
+		unknowns = (order + 1) * (order + 2)
+
+		A = np.zeros((ndata * 2, unknowns + 1))
+		pidx = 0
+		for j in range(order + 1):
+			for i in range(j + 1):
+				A[:ndata, pidx] = xs ** (j - i) * ys**i
+				A[ndata:, pidx + unknowns // 2] = xs ** (j - i) * ys**i
+				pidx += 1
+		A[:ndata, -1] = xd
+		A[ndata:, -1] = yd
+
+		_, _, V = np.linalg.svd(A)
+		est_theta = -V[-1, :-1] / V[-1, -1]
+
+		return est_theta
+
+def invert_transform(theta,shape,nl=20):
+	a,b = coefficients_split(theta)
+	order = coefficients_order(theta)
+
+	## make grid
+	x = np.linspace(0,shape[0],nl)
+	y = np.linspace(0,shape[0],nl)
+	gx,gy = np.meshgrid(x,y,indexing='ij')
+	x = gx.flatten()
+	y = gy.flatten()
+
+	## transform grid
+	xp,yp = polynomial_transform_many(x,y,a,b,order)
+	
+	## reverse transform of the points
+	theta_est = estimate_polynomial_from_points(xp,yp,x,y,order)
+	return theta_est

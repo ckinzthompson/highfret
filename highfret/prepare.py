@@ -19,6 +19,17 @@ except:
 	def load(fn):
 		return tifffile.imread(fn)
 
+@nb.njit
+def apply_calibration(data,cal):
+	g,o,v = cal
+	for t in range(data.shape[0]):
+		for i in range(data.shape[1]):
+			for j in range(data.shape[2]):
+				dtemp = int((float(data[t,i,j])-o[i,j])/g[i,j])
+				if dtemp < 0:
+					dtemp = 0
+				data[t,i,j] = dtemp
+	return data
 
 @nb.njit
 def acf1(movie):

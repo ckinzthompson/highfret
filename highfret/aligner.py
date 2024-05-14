@@ -8,7 +8,6 @@ from . import prepare
 from . import modelselect_alignment as alignment
 order = alignment.coefficients_order
 
-
 def get_out_dir(fn_data):
 	filename = re.sub(r'\s+', '', fn_data)
 	if os.path.exists(filename):
@@ -28,24 +27,21 @@ def get_out_dir(fn_data):
 		raise Exception('File does not exist')
 
 
-def prepare_data(fn_data,flag_what,flag_split):
+def prepare_data(fn_data,flag_what,flag_split,first=0,last=0):
 	#### Prepare
+
 	d = prepare.load(fn_data)
+	end = d.shape[0] if last == 0 else last
+	if first >= end:
+		first = end-1
+	d = d[first:end]
 	print('Loaded %s'%(fn_data))
 	print('Data Shape:',d.shape)
 
 	if d.ndim == 3:
 		## normalizations are mostly for visualizations!
 		if flag_what == 'mean':
-			# from .fast_median import med_perreault_boundary
-			# img = np.zeros((d.shape[1],d.shape[2]))
-			# for i in range(d.shape[0]):
-			# 	img += med_perreault_boundary(d[i]//4,9).astype('float') #- med_perreault_boundary(d[i],10).astype('float')
-			# 	break
-			# # img /= float(d.shape[0])
 			img = d.mean(0)
-			# img = d.mean(0) - d.mean()
-			# img /= np.sqrt(d.var(0)+d.var())
 			print('Using Average of %d frames'%(d.shape[0]))
 		elif flag_what == 'acf':
 			img = prepare.acf1(d)
@@ -54,29 +50,26 @@ def prepare_data(fn_data,flag_what,flag_split):
 			if flag_what >= d.shape[0]:
 				raise Exception('No such frame. %s'%(str(d.shape)))
 			img = d[flag_what].astype('double')
-			img  -= img.mean()
-			img /= img.std()
 			print('Using frame %d'%(flag_what))
 		else:
 			raise Exception('do not know how to interpret preparation instruction')
 	elif d.ndim == 2:
-		img = d - d.mean()
-		img /= img.std()
+		img = d.astype('double')
 
 	if flag_split == 'L/R':
 		print('Split image L/R')
-		d1,d2 = prepare.split_lr(img)
+		dg,dr = prepare.split_lr(img)
 	elif flag_split == 'T/B':
 		print('Split image T/B')
-		d1,d2 = prepare.split_tb(img)
+		dg,dr = prepare.split_tb(img)
 
 	out_dir = get_out_dir(fn_data)
 	if not os.path.exists(out_dir):
 		os.mkdir(out_dir)
 
-	print('Prepared Shapes: %s, %s'%(str(d1.shape),str(d2.shape)))
-	np.save(os.path.join(out_dir,'prep_temp_d1.npy'),d1)
-	np.save(os.path.join(out_dir,'prep_temp_d2.npy'),d2)
+	print('Prepared Shapes: %s, %s'%(str(dg.shape),str(dr.shape)))
+	np.save(os.path.join(out_dir,'prep_temp_dg.npy'),dg)
+	np.save(os.path.join(out_dir,'prep_temp_dr.npy'),dr)
 
 	with open(os.path.join(out_dir,'prep_details.txt'),'w') as f:
 		out = "Aligner - %s\n=====================\n"%(time.ctime())
@@ -97,7 +90,7 @@ def prepare_data(fn_data,flag_what,flag_split):
 	print('Prepared data')
 
 def initialize_theta(fn_data,flag_load,fn_theta,flag_fourier_guess):
-	#### Initialize/Load/Find polynomial transforms
+	#### Initialize/Load/Find polynomial transforms for R into G
 	if flag_load:
 		if os.path.exists(fn_theta):
 			theta = np.load(fn_theta)
@@ -107,8 +100,8 @@ def initialize_theta(fn_data,flag_load,fn_theta,flag_fourier_guess):
 			raise Exception('File does not exist: %s'%(fn_theta))
 	else:
 		if flag_fourier_guess:
-			d1,d2 = get_prepared_data(fn_data)
-			theta = alignment.alignment_guess_coefficients(d2,d1)
+			dg,dr = get_prepared_data(fn_data)
+			theta = alignment.alignment_guess_coefficients(dr,dg)
 			# theta = alignment.upscale_theta(theta, c=flag_downscale)
 			print('Guessed Fourier shift: (%.4f, %.4f)'%(theta[0],theta[3]))
 		else:
@@ -121,23 +114,23 @@ def get_prepared_data(fn_data):
 	#### Load prepared image
 	out_dir = get_out_dir(fn_data)
 
-	if not os.path.exists(os.path.join(out_dir,'prep_temp_d1.npy')) or not os.path.exists(os.path.join(out_dir,'prep_temp_d2.npy')):
+	if not os.path.exists(os.path.join(out_dir,'prep_temp_dg.npy')) or not os.path.exists(os.path.join(out_dir,'prep_temp_dr.npy')):
 		raise Exception('Please run prepare_data first')
 		
-	d1 = np.load(os.path.join(out_dir,'prep_temp_d1.npy'))
-	d2 = np.load(os.path.join(out_dir,'prep_temp_d2.npy'))
+	dg = np.load(os.path.join(out_dir,'prep_temp_dg.npy'))
+	dr = np.load(os.path.join(out_dir,'prep_temp_dr.npy'))
 
-	return d1,d2
+	return dg,dr
 
 def optimize_data(fn_data,theta,flag_downscale,flag_order,flag_optimize,flag_maxiter,flag_miniter):
-	d1,d2 = get_prepared_data(fn_data)
+	dg,dr = get_prepared_data(fn_data)
 	
 	#### Downscale image
-	orig_shape = d1.shape
+	orig_shape = dg.shape
 	for i in range(int(np.log2(flag_downscale))):
-		d1 = alignment.downscale_img(d1)
-		d2 = alignment.downscale_img(d2)
-	print('Downscaled %d times: %s >> %s'%(int(np.log2(flag_downscale)),str(orig_shape),str(d1.shape)))
+		dg = alignment.downscale_img(dg)
+		dr = alignment.downscale_img(dr)
+	print('Downscaled %d times: %s >> %s'%(int(np.log2(flag_downscale)),str(orig_shape),str(dg.shape)))
 
 	## Scale theta to the proper downscaled image space
 	theta = alignment.upscale_theta(theta,1./flag_downscale)
@@ -156,8 +149,8 @@ def optimize_data(fn_data,theta,flag_downscale,flag_order,flag_optimize,flag_max
 		print('Optimization\n========================')
 		iter = 0
 		for iter in range(flag_maxiter):
-			theta,result = alignment.alignment_max_evidence_polynomial(d2,d1,theta,maxiter=10000,progressbar=True)
-			print(order(theta),result.success,alignment.check_distorted(d2,theta),-result.fun)
+			theta,result = alignment.alignment_max_evidence_polynomial(dr,dg,theta,maxiter=10000,progressbar=True)
+			print(order(theta),result.success,alignment.check_distorted(dr,theta),-result.fun)
 			if result.success and iter >= flag_miniter:
 				break
 			if iter >= flag_maxiter - 1 and not result.success:
@@ -170,28 +163,28 @@ def optimize_data(fn_data,theta,flag_downscale,flag_order,flag_optimize,flag_max
 	return theta
 
 def render_images(fn_data,theta=None):
-	d1,d2 = get_prepared_data(fn_data)
+	dg,dr = get_prepared_data(fn_data)
 	
 	if theta is None:
 		theta = alignment.coefficients_blank(1)
 
-	imgrgb0 = alignment.nps2rgb(d1,d2)
+	imgrgb0 = alignment.nps2rgb(dg,dr)
 
 	#### Output Images
-	q2 = alignment.interpolate_polynomial(d2,*alignment.coefficients_split(theta))
-	imgrgb1 = alignment.nps2rgb(d1,q2)
+	qg = alignment.rev_interpolate_polynomial(dg,*alignment.coefficients_split(theta))
+	imgrgb1 = alignment.nps2rgb(qg,dr)
 
-	q1 = np.zeros_like(q2)
-	ll = q1.shape[0]//10
-	for i in range(q1.shape[0]//ll):
-		q1[ll//2 + i*ll,:] = 1.
-	ll = q1.shape[1]//10
-	for j in range(q1.shape[1]//ll):
-		q1[:,ll//2 + j*ll] = 1.
+	qr = np.zeros_like(dr)
+	ll = qr.shape[0]//10
+	for i in range(qr.shape[0]//ll):
+		qr[ll//2 + i*ll,:] = 1.
+	ll = qr.shape[1]//10
+	for j in range(qr.shape[1]//ll):
+		qr[:,ll//2 + j*ll] = 1.
 
-	q2 = q1.copy()
-	q2 = alignment.interpolate_polynomial(q2,*alignment.coefficients_split(theta))
-	imgrgb2 = alignment.nps2rgb(q1,q2)
+	qg = qr.copy()
+	qg = alignment.rev_interpolate_polynomial(qg,*alignment.coefficients_split(theta))
+	imgrgb2 = alignment.nps2rgb(qg,qr)
 
 	## avoid warnings by clipping at 0 and 1
 	imgrgb0[imgrgb0<0.] = 0
@@ -203,37 +196,7 @@ def render_images(fn_data,theta=None):
 
 	## make plot
 	fig,ax=plt.subplots(1,3,sharex=True,sharey=True)
-	ax[0].imshow(imgrgb0)#,origin='lower',interpolation='nearest')
-	ax[1].imshow(imgrgb1)#,origin='lower',interpolation='nearest')
-	ax[2].imshow(imgrgb2)#,origin='lower',interpolation='nearest')
+	ax[0].imshow(imgrgb0,interpolation='nearest')
+	ax[1].imshow(imgrgb1,interpolation='nearest')
+	ax[2].imshow(imgrgb2,interpolation='nearest')
 	return fig,ax
-
-
-
-if __name__ == '__main__':
-	# fn_data = '/Users/colin/Desktop/projects/test_data/tirf/5.tif'
-	fn_data = '/Users/colin/Desktop/projects/test_data/tirf/vc436HS_1_MMStack_Pos0.ome.tif'
-	fn_data = '/Users/colin/Downloads/20240505_align_1_MMStack_Default.ome.tif'
-	fn_theta = 'theta.npy'
-
-	flag_what = 'mean'
-	flag_split = 'lr'
-	flag_downscale = 1.
-	flag_order = 4
-	flag_maxiter = 10
-	flag_miniter = 5
-	flag_fourier_guess = True
-	flag_optimize = True
-	flag_load = True
-	flag_save = True
-
-	if flag_maxiter < flag_miniter:
-		flag_maxiter = flag_miniter
-
-	prepare_data(fn_data,flag_what,flag_split)
-	theta = initialize_theta(fn_data,flag_load,fn_theta,flag_fourier_guess)
-	theta = optimize_data(fn_data,theta,flag_downscale,flag_order,flag_optimize,flag_maxiter,flag_miniter)
-	if flag_save:
-		np.save('theta.npy',theta)
-	fig,ax = render_images(fn_data,theta)
-	plt.show()
