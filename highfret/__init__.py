@@ -13,10 +13,10 @@ __url__ = "https://github.com/ckinzthompson/highfret"
 
 __author__ = "Colin Kinz-Thompson"
 
-from . import aligner
-from . import spotfinder
-from . import extracter
-
 from . import prepare
 from . import minmax
 from . import modelselect_alignment as alignment
+
+from . import aligner
+from . import spotfinder
+from . import extracter
