@@ -11,7 +11,7 @@ __license__ = "GPLv3"
 __url__ = "https://github.com/ckinzthompson/highfret"
 
 
-__author__ = "Colin Kinz-Thompson
+__author__ = "Colin Kinz-Thompson"
 
 from . import aligner
 from . import spotfinder
