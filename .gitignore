@@ -1,6 +1,7 @@
 *.pyc
 *.nbi
 *.nbc
+*.npy
 __pycache__
 .DS_Store
 build
