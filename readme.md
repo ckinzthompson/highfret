@@ -1,9 +1,9 @@
 # highFRET
 `highfret` is a Python package for analyzing smFRET data
-
 ![spots_all_vc436HS_1_MMStack_Pos0](https://github.com/ckinzthompson/highfret/assets/17210418/25c02463-cfd7-4281-8973-8f6c2d007b08)
 
 ## Directions
+Follow these instructions.
 
 ### Installation
 ```bash
@@ -20,7 +20,7 @@ conda activate highfret
 jupyter-lab
 ```
 
-Run the following stages (probably in order)
+Run the following stages (probably in order):
 
 #### Alignment 
 Use this to map the donor (green) and acceptor (red) color channels into each other.
