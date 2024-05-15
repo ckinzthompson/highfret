@@ -1,6 +1,7 @@
 # highFRET
 `highfret` is a Python package for analyzing smFRET data
 
+![spots_all_vc436HS_1_MMStack_Pos0](https://github.com/ckinzthompson/highfret/assets/17210418/25c02463-cfd7-4281-8973-8f6c2d007b08)
 
 ## Directions
 
@@ -48,8 +49,6 @@ Data is saved in a folder located where your movie is found. It is titled `/path
 <img width="1383" alt="spotfind gui" src="https://github.com/ckinzthompson/highfret/assets/17210418/5d2d4618-c2ae-4d5b-b3a6-0f1805271366">
 
 ![overlay_vc436HS_1_MMStack_Pos0](https://github.com/ckinzthompson/highfret/assets/17210418/3f999a4d-55a1-4fbc-a2c5-d44c542e9f60)
-
-![spots_all_vc436HS_1_MMStack_Pos0](https://github.com/ckinzthompson/highfret/assets/17210418/25c02463-cfd7-4281-8973-8f6c2d007b08)
 
 ![spots_final_vc436HS_1_MMStack_Pos0](https://github.com/ckinzthompson/highfret/assets/17210418/242875d1-7b1a-43bf-bbfc-8048af370dbe)
 
