@@ -20,3 +20,5 @@ from . import modelselect_alignment as alignment
 from . import aligner
 from . import spotfinder
 from . import extracter
+
+from . import gui

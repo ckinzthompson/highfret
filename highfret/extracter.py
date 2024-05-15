@@ -1,3 +1,6 @@
+import warnings 
+warnings.filterwarnings("ignore", category=UserWarning, module="numba")
+
 import os
 import re
 import h5py
@@ -5,6 +8,8 @@ import numpy as np
 import numba as nb
 from tqdm import tqdm
 import matplotlib.pyplot as plt
+
+
 
 from . import prepare,minmax,alignment,spotfinder
 

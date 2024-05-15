@@ -1,3 +1,6 @@
+import warnings 
+warnings.filterwarnings("ignore", category=UserWarning, module="numba")
+
 import numpy as np
 np.seterr(all='ignore')
 import numba as nb

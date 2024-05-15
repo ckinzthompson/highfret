@@ -14,3 +14,4 @@ env
 *.traces
 .quarto
 .vscode
+.ipynb_checkpoints

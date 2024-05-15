@@ -1,3 +1,6 @@
+import warnings 
+warnings.filterwarnings("ignore", category=UserWarning, module="numba")
+
 import os
 import re
 import time
@@ -211,13 +214,10 @@ def find_spots(fn_data,fn_align,flags):
 
 	## Combine & remove duplicates
 	if flags['which'] == 'Both':
-		print('asdf')
 		g_spots = np.concatenate([spots_gg,spots_rr],axis=0) ## all spots in green coordinates
 	elif flags['which'] == 'Only Green':
-		print('qwer')
 		g_spots = spots_gg.copy()
 	elif flags['which'] == 'Only Red':
-		print('zxcv')
 		g_spots = spots_rr.copy()
 	else:
 		raise Exception('IDK which spots you want')

@@ -1,3 +1,6 @@
+import warnings 
+warnings.filterwarnings("ignore", category=UserWarning, module="numba")
+
 import numba as nb
 from math import log,fabs,lgamma,exp,gamma,pow,nan
 from math import erf as erff

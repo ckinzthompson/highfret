@@ -21,9 +21,8 @@ INSTALL_REQUIRES = [
 	"tifffile",
 	"scipy",
 	"matplotlib",
-	"jupyterlab",
 	"ipywidgets",
-	"ipython",
+	"jupyterlab",
 	"h5py",
 	"tqdm"
 ]
