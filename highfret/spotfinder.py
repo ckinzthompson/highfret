@@ -10,7 +10,7 @@ import numba as nb
 import matplotlib.pyplot as plt
 
 from scipy.ndimage import gaussian_filter
-from . import prepare,minmax,alignment
+from . import prepare,minmax,alignment,punch
 
 
 def default_flags():
@@ -25,6 +25,7 @@ def default_flags():
 		'smooth':0.6,
 		'which':'Both',
 		'localmax_region':1,
+		'refine':True,
 	}
 	return df
 
@@ -83,6 +84,19 @@ def remove_close_spots(spots,cutoff):
 			out[kept,1] = float(spots[i,1])
 			kept += 1
 	return out[:kept]
+
+@nb.njit
+def find_outofframe(img,spots):
+	nx,ny = img.shape
+	ns,_ = spots.shape
+	keep = np.ones(ns,dtype='bool')
+
+	for i in range(ns):
+		if spots[i,0] < 0 or spots[i,0] >= nx:
+			keep[i] = False
+		if spots[i,1] < 0 or spots[i,1] >= ny:
+			keep[i] = False
+	return keep
 
 def get_out_dir(fn_data):
 	filename = re.sub(r'\s+', '', fn_data)
@@ -165,18 +179,38 @@ def get_prepared_data(fn_data):
 
 	return img1,img2
 
-def prep_imgs(imgg,imgr,theta,flags):
+def refine_simple(img, spots, l=2, max_shift=1.):
+	punches = punch.get_punches(img, spots, l=l, fill_value=np.nan)
+	
+	x = np.arange(punches.shape[1]).astype('double')
+	x -= float(x.size//2) + 0.
+	gx,gy = np.meshgrid(x,x,indexing = 'ij')
+
+	bad = np.all(np.isnan(punches),axis=(1,2))
+	punches[bad] = 0
+	sx = np.nanmean(punches*gx[None,:,:],axis=(1,2))
+	sy = np.nanmean(punches*gy[None,:,:],axis=(1,2))
+	sx[np.abs(sx)>max_shift] = 0.
+	sy[np.abs(sy)>max_shift] = 0.
+
+	out = spots.copy()
+	out[:,0] += sx
+	out[:,1] += sy
+	return out
+
+def prep_imgs(imgg,imgr,theta,flags,align=True):
 	if flags['smooth'] > 0:
 		imgg = gaussian_filter(imgg,flags['smooth'])
 		imgr = gaussian_filter(imgr,flags['smooth'])
 	
-	######## N.B. invert is not reliable
-	#### Do everything in green space
-	## theta is R to G, but interp happens backwards (ie for theta, it's G to R)
-	## therefore inv_theta (G to R) gives ability to transform R to G
-	inv_theta = alignment.invert_transform(theta,shape=imgg.shape,nl=40) 
-	a,b = alignment.coefficients_split(inv_theta)
-	imgr = alignment.rev_interpolate_polynomial(imgr,a,b) ## img2 is R in green space 
+	if align:
+		######## N.B. invert is not reliable
+		#### Do everything in green space
+		## theta is R to G, but interp happens backwards (ie for theta, it's G to R)
+		## therefore inv_theta (G to R) gives ability to transform R to G
+		inv_theta = alignment.invert_transform(theta,shape=imgg.shape,nl=40) 
+		a,b = alignment.coefficients_split(inv_theta)
+		imgr = alignment.rev_interpolate_polynomial(imgr,a,b) ## img2 is R in green space 
 	return imgg,imgr
 
 def locate_good_localmax(img,flags):
@@ -200,6 +234,10 @@ def find_spots(fn_data,fn_align,flags):
 	#### Find spots
 	g_spots_g = locate_good_localmax(imgg,flags) ## green spots in green coordinates
 	g_spots_r = locate_good_localmax(imgr,flags) ## red spots in green coordinates
+
+	if flags['refine']:
+		g_spots_g = refine_simple(imgg,g_spots_g)
+		g_spots_r = refine_simple(imgr,g_spots_r)
 
 	#### Compile spots
 	print('Compiling Spots')
@@ -234,6 +272,16 @@ def find_spots(fn_data,fn_align,flags):
 
 	sxr,syr = alignment.polynomial_transform_many(g_spots[:,0].copy(),g_spots[:,1].copy(),a,b,order)
 	r_spots = np.array((sxr,syr)).T ## all spots in red coordinates
+	
+	keep = find_outofframe(imgr,r_spots)
+	g_spots = g_spots[keep]
+	r_spots = r_spots[keep]
+
+	if flags['refine']:
+		imgg,imgr = get_prepared_data(fn_data)
+		imgg,imgr = prep_imgs(imgg,imgr,theta,flags,align=False)
+		g_spots = refine_simple(imgg,g_spots)
+		r_spots = refine_simple(imgr,r_spots)
 
 	return g_spots_g,g_spots_r,r_spots_r,g_spots,r_spots
 

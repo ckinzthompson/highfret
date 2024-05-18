@@ -15,13 +15,14 @@ fn_cal = None
 def gui_extracter():
 	out = widgets.Output()
 
-	## initial guess to file
+	# ## initial guess to file
+	# default = None
+	# fns = os.listdir('./')
+	# for fn in fns:
+	# 	if fn.endswith('.tif'):
+	# 		default = fn
+	# 		break
 	default = None
-	fns = os.listdir('./')
-	for fn in fns:
-		if fn.endswith('.tif'):
-			default = fn
-			break
 
 	wl = widgets.Layout(width='80%',height='24pt')
 	ws = {'description_width':'initial'}
@@ -43,15 +44,21 @@ def gui_extracter():
 
 	float_sigma = widgets.BoundedFloatText(value=.85,min=0,max=1000000,step=.01,description='PSF width (pixels)',style=ws)
 
-	tab_microscope = widgets.Tab(description='')
-	tab_microscope.children = [widgets.VBox([dropdown_split,dropdown_dl,float_sigma]),widgets.VBox([dropdown_split,dropdown_dl,float_pixel_real,float_mag,dropdown_bin,float_lambda_nm,float_NA,float_motion,])]
-	tab_microscope.titles = ['Simple','Advanced']
+	int_nsigma = widgets.BoundedIntText(value=61,min=1,max=1000000,description='Number of Sigmas',layout=wl,style=ws)
+	range_minmaxsigma = widgets.FloatRangeSlider(value=[.2, 2.],min=0,max=10,step=.01,description='Sigma Limits:',orientation='horizontal',readout_format='.2f',layout=wl,style=ws)
+	dropdown_keeptbbins = widgets.Dropdown(value='False',options=['True','False'],ensure_option=True,description='Keep First/Last Bins:', layout=wl, style=ws)
+	dropdown_optmethod= widgets.Dropdown(value='ACF',options=['All','ACF','Max','Mean'],ensure_option=True,description='Data Treatment:', layout=wl, style=ws)
+	int_opt_start = widgets.IntText(value=0,description='First Frame', layout=wl,style=ws)
+	int_opt_end = widgets.IntText(value=0,description='Last Frame', layout=wl,style=ws)
+	button_optimize = widgets.Button(description='Optimize Sigma',layout=widgets.Layout(width='2in',height='0.25in'),style=ws)
 
-	# # accordion_advanced = widgets.Accordion(children=[widgets.VBox([dropdown_split,dropdown_dl,float_pixel_real,float_mag,dropdown_bin,float_lambda_nm,float_NA,float_motion,]),], titles=('Microsope (Advanced)',))
-	# # accordion_simple = widgets.Accordion(children=[widgets.VBox([dropdown_split,dropdown_dl,float_sigma]),], titles=('Microsope (Simple)',))
-	# stack_microscope = widgets.Stack([accordion_simple,accordion_advanced], selected_index=0)
-	# dropdown_simpleadvanced = widgets.Dropdown(options=['Simple', 'Advanced'])
-	# widgets.jslink((dropdown_simpleadvanced, 'index'), (stack_microscope, 'selected_index'))
+	tab_microscope = widgets.Tab(description='')
+	tab_microscope.children = [
+		widgets.VBox([dropdown_split,dropdown_dl,float_sigma]),
+		widgets.VBox([dropdown_split,dropdown_dl,float_pixel_real,float_mag,dropdown_bin,float_lambda_nm,float_NA,float_motion,]),
+		widgets.VBox([dropdown_split,dropdown_dl,int_nsigma,range_minmaxsigma,dropdown_keeptbbins,dropdown_optmethod,int_opt_start,int_opt_end,button_optimize]),
+	]
+	tab_microscope.titles = ['Simple','Advanced','Optimize']
 
 	button_extract = widgets.Button(description="Extract",layout=widgets.Layout(width='2in',height='0.25in'),style=ws)
 	vbox_extract = widgets.VBox([accordion_files, tab_microscope, button_extract,])
@@ -60,6 +67,52 @@ def gui_extracter():
 		with out:
 			out.clear_output()
 			display(vbox_extract)
+
+	def click_optimize(b):
+		global fn_data,fn_align,fn_cal
+		with out:
+			show_prep_ui()
+
+			data_filename = re.sub(r'\s+', '', text_data_filename.value)
+			align_filename = re.sub(r'\s+', '', text_align_filename.value)
+			cal_filename = re.sub(r'\s+', '', text_calibration_filename.value)
+
+			
+			split = dropdown_split.value
+			dl = int(dropdown_dl.value)
+
+			if cal_filename == '':
+				check_these = [data_filename,align_filename]
+				print('Ignoring Calibration')
+			else:
+				check_these = [data_filename,align_filename,cal_filename]
+
+			for fn in check_these:
+				if os.path.exists(fn):
+					print("Found: %s"%(fn))
+				else:
+					print('Failure: File does not exist !!!! %s'%(fn))
+					fn_data = None
+					fn_align = None
+					fn_cal = None
+					return
+			
+			fn_data = data_filename
+			fn_align = align_filename
+			fn_cal = cal_filename if cal_filename != '' else None
+
+			out_dir = spotfinder.get_out_dir(fn_data)
+			prefix = os.path.split(out_dir)[1][19:]
+
+			nsigma = int_nsigma.value
+			sigma_low,sigma_high = range_minmaxsigma.value
+			flag_keeptbbins = dropdown_keeptbbins.value == "True"
+			method = dropdown_optmethod.value
+			first = int_opt_start.value
+			last = int_opt_end.value
+			fig,ax = extracter.optimize_sigma(fn_data,fn_align,fn_cal,split,dl,nsigma,sigma_low,sigma_high,flag_keeptbbins,method,first,last)
+			[plt.savefig(os.path.join(out_dir,'sigma_optimization_%s.%s'%(prefix,ext))) for ext in ['png','pdf']]
+			plt.show()
 
 	def click_extract(b):
 		global fn_data,fn_align,fn_cal
@@ -122,7 +175,8 @@ def gui_extracter():
 			fig.set_figwidth(6.)
 			[plt.savefig(os.path.join(out_dir,'intensity_avg_%s.%s'%(prefix,ext))) for ext in ['png','pdf']]
 			plt.show()
-		
+
+	button_optimize.on_click(click_optimize)	
 	button_extract.on_click(click_extract)
 	show_prep_ui()
 	display(out)

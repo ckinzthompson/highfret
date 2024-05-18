@@ -21,13 +21,14 @@ ax = None
 def gui_aligner():
 	out = widgets.Output()
 
-	## initial guess to file
+	# ## initial guess to file
+	# default = None
+	# fns = os.listdir('./')
+	# for fn in fns:
+	# 	if fn.endswith('.tif'):
+	# 		default = fn
+	# 		break
 	default = None
-	fns = os.listdir('./')
-	for fn in fns:
-		if fn.endswith('.tif'):
-			default = fn
-			break
 
 	wl = widgets.Layout(width='80%',height='24pt')
 	ws = {'description_width':'initial'}

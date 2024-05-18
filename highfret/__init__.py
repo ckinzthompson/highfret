@@ -16,6 +16,7 @@ __author__ = "Colin Kinz-Thompson"
 from . import prepare
 from . import minmax
 from . import modelselect_alignment as alignment
+from . import punch
 
 from . import aligner
 from . import spotfinder

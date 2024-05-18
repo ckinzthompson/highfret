@@ -15,13 +15,14 @@ fn_cal = None
 def gui_spotfinder():
 	out = widgets.Output()
 
-	## initial guess to file
+	# ## initial guess to file
+	# default = None
+	# fns = os.listdir('./')
+	# for fn in fns:
+	# 	if fn.endswith('.tif'):
+	# 		default = fn
+	# 		break
 	default = None
-	fns = os.listdir('./')
-	for fn in fns:
-		if fn.endswith('.tif'):
-			default = fn
-			break
 
 	wl = widgets.Layout(width='80%',height='24pt')
 	ws = {'description_width':'initial'}
@@ -45,7 +46,8 @@ def gui_spotfinder():
 	dropdown_matched = widgets.Dropdown(value='True',options=['True','False'],ensure_option=True,description='Matched Spots?',style=ws)
 	dropdown_which = widgets.Dropdown(value='Both',options=['Both','Only Green','Only Red'],ensure_option=True,description='Which Spots?',style=ws)
 	float_acf_cutoff = widgets.BoundedFloatText(value=0.2,min=0,max=1,step=.001,description='Spotfinding ACF cutoff',style=ws)
-	accordion_spots = widgets.Accordion(children=[widgets.VBox([dropdown_localmax,float_smooth,dropdown_which,dropdown_matched,float_acf_cutoff,]),], titles=('Spotfinding',))
+	checkbox_refine = widgets.Checkbox(value=True,description='Refine spots',layout=wl,style=ws)
+	accordion_spots = widgets.Accordion(children=[widgets.VBox([dropdown_localmax,float_smooth,dropdown_which,dropdown_matched,float_acf_cutoff,checkbox_refine,]),], titles=('Spotfinding',))
 	# accordion_spots.selected_index = 0
 
 	button_prepare = widgets.Button(description="Prepare Data",layout=widgets.Layout(width='2in',height='0.25in'),style=ws)
@@ -78,6 +80,7 @@ def gui_spotfinder():
 			flags['smooth'] = float_smooth.value
 			flags['which'] = dropdown_which.value
 			flags['localmax_region'] = dropdown_localmax.value
+			flags['refine'] = checkbox_refine.value
 
 			# for key in flags.keys():
 			# 	print(key,flags[key])
@@ -118,9 +121,9 @@ def gui_spotfinder():
 
 	def click_spotfind(b):
 		global fn_data,fn_align,fn_cal
-		# clear_output()
-		# show_prep_ui()
 		with out:
+			out.clear_output()
+			show_prep_ui()
 
 			if fn_data is None or fn_align is None:
 				print('Please prepare data first')
@@ -137,6 +140,7 @@ def gui_spotfinder():
 			flags['smooth'] = float_smooth.value
 			flags['which'] = dropdown_which.value
 			flags['localmax_region'] = dropdown_localmax.value
+			flags['refine'] = checkbox_refine.value
 
 			out_dir = spotfinder.get_out_dir(fn_data)
 			prefix = os.path.split(out_dir)[1][19:]
