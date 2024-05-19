@@ -31,7 +31,8 @@ EXTRAS_REQUIRE = {
 	],
 	"tests": [
 	],
-	"release": [
+	"calibration": [
+		"pycromanager",
 	],
 }
 EXTRAS_REQUIRE["dev"] = EXTRAS_REQUIRE["tests"] + EXTRAS_REQUIRE["docs"]

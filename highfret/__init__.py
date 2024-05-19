@@ -21,5 +21,6 @@ from . import punch
 from . import aligner
 from . import spotfinder
 from . import extracter
+from . import calibrater
 
 from . import gui
