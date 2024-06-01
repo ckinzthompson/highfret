@@ -98,7 +98,8 @@ def polynomial_transform(x1,y1,a,b,K):
 		y +=  b[35]*x8 + b[36]*x7*y1 + b[37]*x6*y2 + b[38]*x5*y3 + b[39]*x4*y4 + b[40]*x3*y5 + b[41]*x2*y6 + a[42]*y8
 	return x,y
 
-@nb.njit
+# @nb.njit
+@nb.njit(nogil=True,parallel=True,fastmath=True)
 def rev_interpolate_polynomial(q,a,b):
 	'''
 	Okay a little confusing, but the easiest way to transform an image is actually to work backwards.
@@ -141,7 +142,7 @@ def rev_interpolate_polynomial(q,a,b):
 		raise Exception('Not Implemented; too high degree polynomial')
 
 	## make the new image
-	for i in range(out.shape[0]):
+	for i in nb.prange(out.shape[0]):
 		for j in range(out.shape[1]):
 			x1 = float(i)
 			y1 = float(j)

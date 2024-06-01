@@ -3,8 +3,11 @@ warnings.filterwarnings("ignore", category=UserWarning, module="numba")
 
 import numpy as np
 import numba as nb
+import os
+import re
 
 import tifffile
+from scipy.ndimage import median_filter
 
 try:
 	import zarr
@@ -34,8 +37,16 @@ def apply_calibration(data,cal):
 				data[t,i,j] = dtemp
 	return data
 
+
+
+def acf(movie,median_n=11):
+	q = _acf(movie)
+	bg = median_filter(q,median_n)
+	return q-bg
+
 @nb.njit
-def acf1(movie):
+# @nb.njit(nogil=True,parallel=True,fastmath=True)
+def _acf(movie):
 	'''
 	can take anything including unint
 	outputs double
@@ -115,3 +126,35 @@ def split_quad(d):
 		logger.debug("Aborted split: image dimensions not 2 or 3")
 		raise Exception("Aborted split: image dimensions not 2 or 3")
 	return d1,d2,d3,d4
+
+
+def get_out_dir(fn_data):
+	filename = re.sub(r'\s+', '', fn_data)
+	if os.path.exists(filename):
+
+		## pull out file name from path
+		fn_path,fn_data = os.path.split(filename)
+
+		## pull off extension
+		if fn_data.endswith('.ome.tif'):
+			fn_base = fn_data[:-8]
+		else:
+			fn_base = os.path.splitext(fn_data)[0]
+
+		fn_out_dir = os.path.join(fn_path,'highfret_%s'%(fn_base))
+
+		dirs = [
+			fn_out_dir,
+			os.path.join(fn_out_dir,'temp'),
+			os.path.join(fn_out_dir,'aligner'),
+			os.path.join(fn_out_dir,'spotfinder'),
+			os.path.join(fn_out_dir,'extracter')
+		]
+
+		for dir in dirs:
+			if not os.path.exists(dir):
+				os.mkdir(dir)
+		return dirs
+	
+	else:
+		raise Exception('File does not exist')

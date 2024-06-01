@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import ipywidgets as widgets
 from IPython.display import display,clear_output
 
-from .. import extracter,spotfinder
+from .. import extracter,spotfinder,prepare
 
 fn_data = None
 fn_align = None
@@ -33,6 +33,7 @@ def gui_extracter():
 	accordion_files = widgets.Accordion(children=[widgets.VBox([text_data_filename,text_align_filename,text_calibration_filename,]),], titles=('Files',))
 	accordion_files.selected_index = 0
 
+	dropdown_method = widgets.Dropdown(value='MLE PSF', options=['MLE PSF','Mask (4px)'], ensure_option=True,description='Method:',style=ws)
 	dropdown_split = widgets.Dropdown(value='L/R',options=['L/R','T/B'],ensure_option=True,description='Split:', style=ws)
 	dropdown_dl = widgets.Dropdown(value=5, options=[1,2,3,4,5,6,7,8,9,10,11],description='Extraction Radius (pixels)',style=ws)
 	float_pixel_real = widgets.BoundedFloatText(value=6500.,min=1,max=1000000,step=.1,description='Pixel Length (nm)',style=ws)
@@ -54,8 +55,8 @@ def gui_extracter():
 
 	tab_microscope = widgets.Tab(description='')
 	tab_microscope.children = [
-		widgets.VBox([dropdown_split,dropdown_dl,float_sigma]),
-		widgets.VBox([dropdown_split,dropdown_dl,float_pixel_real,float_mag,dropdown_bin,float_lambda_nm,float_NA,float_motion,]),
+		widgets.VBox([dropdown_split,dropdown_method,dropdown_dl,float_sigma]),
+		widgets.VBox([dropdown_split,dropdown_method,dropdown_dl,float_pixel_real,float_mag,dropdown_bin,float_lambda_nm,float_NA,float_motion,]),
 		widgets.VBox([dropdown_split,dropdown_dl,int_nsigma,range_minmaxsigma,dropdown_keeptbbins,dropdown_optmethod,int_opt_start,int_opt_end,button_optimize]),
 	]
 	tab_microscope.titles = ['Simple','Advanced','Optimize']
@@ -101,8 +102,8 @@ def gui_extracter():
 			fn_align = align_filename
 			fn_cal = cal_filename if cal_filename != '' else None
 
-			out_dir = spotfinder.get_out_dir(fn_data)
-			prefix = os.path.split(out_dir)[1][19:]
+			dirs = prepare.get_out_dir(fn_data)
+			dir_extracter = dirs[4]
 
 			nsigma = int_nsigma.value
 			sigma_low,sigma_high = range_minmaxsigma.value
@@ -111,7 +112,7 @@ def gui_extracter():
 			first = int_opt_start.value
 			last = int_opt_end.value
 			fig,ax = extracter.optimize_sigma(fn_data,fn_align,fn_cal,split,dl,nsigma,sigma_low,sigma_high,flag_keeptbbins,method,first,last)
-			[plt.savefig(os.path.join(out_dir,'sigma_optimization_%s.%s'%(prefix,ext))) for ext in ['png','pdf']]
+			[plt.savefig(os.path.join(dir_extracter,'sigma_optimization.%s'%(ext))) for ext in ['png','pdf']]
 			plt.show()
 
 	def click_extract(b):
@@ -125,6 +126,7 @@ def gui_extracter():
 
 			
 			split = dropdown_split.value
+			method = dropdown_method.value
 			dl = int(dropdown_dl.value)
 			if tab_microscope.selected_index == 0:
 				sigma = float(float_sigma.value)
@@ -157,12 +159,12 @@ def gui_extracter():
 			fn_align = align_filename
 			fn_cal = cal_filename if cal_filename != '' else None
 
-			out_dir = spotfinder.get_out_dir(fn_data)
-			prefix = os.path.split(out_dir)[1][19:]
+			dirs = prepare.get_out_dir(fn_data)
+			dir_extracter = dirs[4]
 			
 			dg,dr = extracter.prepare_data(fn_data,fn_align,fn_cal,split)
 			spots_g,spots_r = extracter.load_spots(fn_data)
-			intensities = extracter.get_intensities(dg,dr,spots_g,spots_r,dl,sigma)
+			intensities = extracter.get_intensities(dg,dr,spots_g,spots_r,dl,sigma,method)
 			
 			extracter.write_hdf5(fn_data,intensities)
 
@@ -173,7 +175,7 @@ def gui_extracter():
 			ax.set_ylabel('Average Intensity')
 			fig.set_figheight(6.)
 			fig.set_figwidth(6.)
-			[plt.savefig(os.path.join(out_dir,'intensity_avg_%s.%s'%(prefix,ext))) for ext in ['png','pdf']]
+			[plt.savefig(os.path.join(dir_extracter,'intensity_avg.%s'%(ext))) for ext in ['png','pdf']]
 			plt.show()
 
 	button_optimize.on_click(click_optimize)	

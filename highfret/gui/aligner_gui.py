@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import ipywidgets as widgets
 from IPython.display import display,clear_output
 
-from .. import aligner
+from .. import aligner,prepare
 
 fn_data = None
 results_index = None
@@ -91,7 +91,8 @@ def gui_aligner():
 				aligner.prepare_data(filename,method,split,first,last) ## Note: this makes the results directory, if necessary
 				
 				fn_data = filename
-				out_dir = aligner.get_out_dir(fn_data)
+				dirs = prepare.get_out_dir(fn_data)
+				out_dir = dirs[2]
 
 				## load any that were previously created
 				fnthetas = [fn for fn in os.listdir(out_dir) if fn.endswith('.theta.npy')]
@@ -200,7 +201,6 @@ def gui_aligner():
 		global fn_data,results_thetas,results_index,results_names,out_dir
 		global fig,ax
 		with out:
-			out_dir = aligner.get_out_dir(fn_data)
 			fig,ax = aligner.render_images(fn_data,results_thetas[results_index])
 			[aa.axis('off') for aa in ax]
 			fig.set_figheight(8.)

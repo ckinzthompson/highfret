@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import ipywidgets as widgets
 from IPython.display import display,clear_output
 
-from .. import spotfinder
+from .. import spotfinder,prepare
 
 fn_data = None
 fn_align = None
@@ -106,8 +106,8 @@ def gui_spotfinder():
 			fn_align = align_filename
 			fn_cal = cal_filename if cal_filename != '' else None
 			
-			out_dir = spotfinder.get_out_dir(fn_data)
-			prefix = os.path.split(out_dir)[1][19:]
+			dirs = prepare.get_out_dir(fn_data)
+			dir_spotfinder = dirs[3]
 
 			spotfinder.prepare_data(fn_data,fn_cal,flags)
 			spotfinder.make_composite_aligned(fn_data,fn_align,flags)
@@ -115,7 +115,7 @@ def gui_spotfinder():
 			fig,ax = spotfinder.render_overlay(fn_data,fn_align,flags)
 			fig.set_figheight(8.)
 			fig.set_figwidth(8.)
-			[plt.savefig(os.path.join(out_dir,'overlay_%s.%s'%(prefix,ext))) for ext in ['png','pdf']]
+			[plt.savefig(os.path.join(dir_spotfinder,'overlay.%s'%(ext))) for ext in ['png','pdf']]
 			plt.show()
 		
 
@@ -142,26 +142,23 @@ def gui_spotfinder():
 			flags['localmax_region'] = dropdown_localmax.value
 			flags['refine'] = checkbox_refine.value
 
-			out_dir = spotfinder.get_out_dir(fn_data)
-			prefix = os.path.split(out_dir)[1][19:]
+			dirs = prepare.get_out_dir(fn_data)
+			dir_spotfinder = dirs[3]
 
 			g_spots_g,g_spots_r,r_spots_r,g_spots,r_spots = spotfinder.find_spots(fn_data,fn_align,flags)
-			spotfinder.save_spots(prefix,fn_data,g_spots_g,g_spots_r,r_spots_r,g_spots,r_spots)
+			spotfinder.save_spots(fn_data,g_spots_g,g_spots_r,r_spots_r,g_spots,r_spots)
 			
 			fig,ax = spotfinder.render_found_maxes(fn_data,fn_align,g_spots_g,g_spots_r,flags)
 			fig.set_figheight(8.)
 			fig.set_figwidth(8.)
-			[plt.savefig(os.path.join(out_dir,'spots_all_%s.%s'%(prefix,ext))) for ext in ['png','pdf']]
+			[plt.savefig(os.path.join(dir_spotfinder,'spots_all.%s'%(ext))) for ext in ['png','pdf']]
 			plt.show()
 
 			fig,ax = spotfinder.render_final_spots(fn_data,g_spots,r_spots,flags)
 			fig.set_figheight(8.)
 			fig.set_figwidth(8.)
-			[plt.savefig(os.path.join(out_dir,'spots_final_%s.%s'%(prefix,ext))) for ext in ['png','pdf']]
+			[plt.savefig(os.path.join(dir_spotfinder,'spots_final.%s'%(ext))) for ext in ['png','pdf']]
 			plt.show()
-
-		
-		
 
 	button_prepare.on_click(click_prepare)	
 	button_spotfind.on_click(click_spotfind)

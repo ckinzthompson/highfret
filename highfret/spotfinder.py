@@ -2,7 +2,6 @@ import warnings
 warnings.filterwarnings("ignore", category=UserWarning, module="numba")
 
 import os
-import re
 import time
 import tifffile
 import numpy as np
@@ -98,24 +97,6 @@ def find_outofframe(img,spots):
 			keep[i] = False
 	return keep
 
-def get_out_dir(fn_data):
-	filename = re.sub(r'\s+', '', fn_data)
-	if os.path.exists(filename):
-
-		## pull out file name from path
-		fn_path,fn_data = os.path.split(filename)
-
-		## pull off extension
-		if fn_data.endswith('.ome.tif'):
-			fn_base = fn_data[:-8]
-		else:
-			fn_base = os.path.splitext(fn_data)[0]
-
-		fn_out_dir = os.path.join(fn_path,'spotfinder_results_%s'%(fn_base))
-		return fn_out_dir
-	else:
-		raise Exception('File does not exist')
-
 def prepare_data(fn_data,fn_cal,flags):
 	print('Loading')
 	data = prepare.load(fn_data)
@@ -141,18 +122,18 @@ def prepare_data(fn_data,fn_cal,flags):
 	print('ACF (Green) Start/End: %d/%d'%(flags['acf_start_g'],end_g))
 	print('ACF (Red)   Start/End: %d/%d'%(flags['acf_start_g'],end_r))
 	print('ACFing')
-	imgg = prepare.acf1(dg[flags['acf_start_g']:end_g])
-	imgr = prepare.acf1(dr[flags['acf_start_r']:end_r])
+	imgg = prepare.acf(dg[flags['acf_start_g']:end_g])
+	imgr = prepare.acf(dr[flags['acf_start_r']:end_r])
 
-	out_dir = get_out_dir(fn_data)
-	if not os.path.exists(out_dir):
-		os.mkdir(out_dir)
+	dirs = prepare.get_out_dir(fn_data)
+	out_dir_temp = dirs[1]
+	out_dir = dirs[3]
 
 	print('Prepared Shapes: %s, %s'%(str(imgg.shape),str(imgr.shape)))
-	np.save(os.path.join(out_dir,'prep_temp_imgg.npy'),imgg)
-	np.save(os.path.join(out_dir,'prep_temp_imgr.npy'),imgr)
+	np.save(os.path.join(out_dir_temp,'prep_imgg.npy'),imgg)
+	np.save(os.path.join(out_dir_temp,'prep_imgr.npy'),imgr)
 
-	with open(os.path.join(out_dir,'prep_details.txt'),'w') as f:
+	with open(os.path.join(out_dir,'details_spotfinder.txt'),'w') as f:
 		out = "Aligner - %s\n=====================\n"%(time.ctime())
 		out += '%s \n'%(fn_data)
 		out += '%s \n=====================\n'%(str(data.shape))
@@ -169,13 +150,15 @@ def prepare_data(fn_data,fn_cal,flags):
 
 def get_prepared_data(fn_data):
 	#### Load prepared image
-	out_dir = get_out_dir(fn_data)
+	dirs = prepare.get_out_dir(fn_data)
+	out_dir_temp = dirs[1]
+	out_dir = dirs[3]
 
-	if not os.path.exists(os.path.join(out_dir,'prep_temp_imgg.npy')) or not os.path.exists(os.path.join(out_dir,'prep_temp_imgr.npy')):
+	if not os.path.exists(os.path.join(out_dir_temp,'prep_imgg.npy')) or not os.path.exists(os.path.join(out_dir_temp,'prep_imgr.npy')):
 		raise Exception('Please run prepare_data first')
 		
-	img1 = np.load(os.path.join(out_dir,'prep_temp_imgg.npy'))
-	img2 = np.load(os.path.join(out_dir,'prep_temp_imgr.npy'))
+	img1 = np.load(os.path.join(out_dir_temp,'prep_imgg.npy'))
+	img2 = np.load(os.path.join(out_dir_temp,'prep_imgr.npy'))
 
 	return img1,img2
 
@@ -299,7 +282,10 @@ def make_composite_aligned(fn_data,fn_align,flags):
 	full *= 2**16
 	full = full.astype('uint16')
 
-	out_dir = get_out_dir(fn_data)
+	dirs = prepare.get_out_dir(fn_data)
+	out_dir_temp = dirs[1]
+	out_dir = dirs[3]
+
 	fn_out = os.path.join(out_dir,'composite_aligned.tif')
 	tifffile.imwrite(fn_out, full)
 
@@ -353,11 +339,14 @@ def render_final_spots(fn_data,g_spots,r_spots,flags):
 	ax[1].set_title('Red')
 	return fig,ax
 
-def save_spots(prefix,fn_data,g_spots_g,g_spots_r,r_spots_r,g_spots,r_spots):
-	out_dir = get_out_dir(fn_data)
-	np.save(os.path.join(out_dir,'%s_%s.npy'%(prefix,'g_spots_g')),g_spots_g)
-	np.save(os.path.join(out_dir,'%s_%s.npy'%(prefix,'g_spots_r')),g_spots_r)
-	np.save(os.path.join(out_dir,'%s_%s.npy'%(prefix,'r_spots_r')),r_spots_r)
-	np.save(os.path.join(out_dir,'%s_%s.npy'%(prefix,'g_spots')),g_spots)
-	np.save(os.path.join(out_dir,'%s_%s.npy'%(prefix,'r_spots')),r_spots)
+def save_spots(fn_data,g_spots_g,g_spots_r,r_spots_r,g_spots,r_spots):
+	dirs = prepare.get_out_dir(fn_data)
+	out_dir_temp = dirs[1]
+	out_dir = dirs[3]
+
+	np.save(os.path.join(out_dir_temp,'%s.npy'%('g_spots_g')),g_spots_g)
+	np.save(os.path.join(out_dir_temp,'%s.npy'%('g_spots_r')),g_spots_r)
+	np.save(os.path.join(out_dir_temp,'%s.npy'%('r_spots_r')),r_spots_r)
+	np.save(os.path.join(out_dir_temp,'%s.npy'%('g_spots')),g_spots)
+	np.save(os.path.join(out_dir_temp,'%s.npy'%('r_spots')),r_spots)
 

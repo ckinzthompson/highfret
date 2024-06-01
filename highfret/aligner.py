@@ -1,5 +1,4 @@
 import os
-import re
 import time
 import numpy as np
 import matplotlib.pyplot as plt
@@ -7,24 +6,6 @@ import matplotlib.pyplot as plt
 from . import prepare
 from . import modelselect_alignment as alignment
 order = alignment.coefficients_order
-
-def get_out_dir(fn_data):
-	filename = re.sub(r'\s+', '', fn_data)
-	if os.path.exists(filename):
-
-		## pull out file name from path
-		fn_path,fn_data = os.path.split(filename)
-
-		## pull off extension
-		if fn_data.endswith('.ome.tif'):
-			fn_base = fn_data[:-8]
-		else:
-			fn_base = os.path.splitext(fn_data)[0]
-
-		fn_out_dir = os.path.join(fn_path,'aligner_results_%s'%(fn_base))
-		return fn_out_dir
-	else:
-		raise Exception('File does not exist')
 
 
 def prepare_data(fn_data,flag_what,flag_split,first=0,last=0):
@@ -44,7 +25,7 @@ def prepare_data(fn_data,flag_what,flag_split,first=0,last=0):
 			img = d.mean(0)
 			print('Using Average of %d frames'%(d.shape[0]))
 		elif flag_what == 'acf':
-			img = prepare.acf1(d)
+			img = prepare.acf(d)
 			print('Using ACF(t=1) image of %d frames'%(d.shape[0]))
 		elif type(flag_what) is int:
 			if flag_what >= d.shape[0]:
@@ -63,15 +44,15 @@ def prepare_data(fn_data,flag_what,flag_split,first=0,last=0):
 		print('Split image T/B')
 		dg,dr = prepare.split_tb(img)
 
-	out_dir = get_out_dir(fn_data)
-	if not os.path.exists(out_dir):
-		os.mkdir(out_dir)
+	dirs = prepare.get_out_dir(fn_data)
+	dir_temp = dirs[1]
+	dir_aligner = dirs[2]
 
 	print('Prepared Shapes: %s, %s'%(str(dg.shape),str(dr.shape)))
-	np.save(os.path.join(out_dir,'prep_temp_dg.npy'),dg)
-	np.save(os.path.join(out_dir,'prep_temp_dr.npy'),dr)
+	np.save(os.path.join(dir_temp,'align_dg.npy'),dg)
+	np.save(os.path.join(dir_temp,'align_dr.npy'),dr)
 
-	with open(os.path.join(out_dir,'prep_details.txt'),'w') as f:
+	with open(os.path.join(dir_aligner,'details_preparation.txt'),'w') as f:
 		out = "Aligner - %s\n=====================\n"%(time.ctime())
 		out += '%s \n'%(fn_data)
 		out += '%s \n=====================\n'%(str(d.shape))
@@ -112,13 +93,15 @@ def initialize_theta(fn_data,flag_load,fn_theta,flag_fourier_guess):
 
 def get_prepared_data(fn_data):
 	#### Load prepared image
-	out_dir = get_out_dir(fn_data)
+	dirs = prepare.get_out_dir(fn_data)
+	dir_temp = dirs[1]
+	dir_aligner = dirs[2]
 
-	if not os.path.exists(os.path.join(out_dir,'prep_temp_dg.npy')) or not os.path.exists(os.path.join(out_dir,'prep_temp_dr.npy')):
+	if not os.path.exists(os.path.join(dir_temp,'align_dg.npy')) or not os.path.exists(os.path.join(dir_temp,'align_dr.npy')):
 		raise Exception('Please run prepare_data first')
 		
-	dg = np.load(os.path.join(out_dir,'prep_temp_dg.npy'))
-	dr = np.load(os.path.join(out_dir,'prep_temp_dr.npy'))
+	dg = np.load(os.path.join(dir_temp,'align_dg.npy'))
+	dr = np.load(os.path.join(dir_temp,'align_dr.npy'))
 
 	return dg,dr
 
