@@ -9,7 +9,7 @@ Follow these instructions.
 ```bash
 conda create -n highfret python
 conda activate highfret
-pip install highfret
+pip install git+https://github.com/ckinzthompson/highfret.git
 ```
 
 ### Use
