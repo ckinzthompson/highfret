@@ -38,8 +38,7 @@ def gui_spotfinder():
 	dropdown_matched = widgets.Dropdown(value=sbool,options=['True','False'],ensure_option=True,description='Matched Spots?',style=ws)
 	dropdown_which = widgets.Dropdown(value=default['which'],options=['Both','Only Green','Only Red'],ensure_option=True,description='Which Spots?',style=ws)
 	float_acf_cutoff = widgets.BoundedFloatText(value=default['acf_cutoff'],min=0,max=1,step=.001,description='Spotfinding ACF cutoff',style=ws)
-	sbool = 'True' if default['refine'] else 'False'
-	checkbox_refine = widgets.Checkbox(value=sbool,description='Refine spots',layout=wl,style=ws)
+	checkbox_refine = widgets.Checkbox(value=default['refine'],description='Refine spots',layout=wl,style=ws)
 	accordion_spots = widgets.Accordion(children=[widgets.VBox([dropdown_localmax,float_smooth,dropdown_which,dropdown_matched,float_acf_cutoff,checkbox_refine,]),], titles=('Spotfinding',))
 
 	button_prepare = widgets.Button(description="Prepare Data",layout=widgets.Layout(width='2in',height='0.25in'),style=ws)
