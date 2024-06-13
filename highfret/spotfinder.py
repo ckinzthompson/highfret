@@ -14,9 +14,13 @@ from . import prepare,minmax,alignment,punch
 
 def default_flags():
 	df = {
+		'fn_data':None,
+		'fn_align':None,
+		'fn_cal':None,
+
 		'split':'L/R',
 		'acf_cutoff':0.2,
-		'matched_spots':False,
+		'matched_spots':True,
 		'acf_start_g':0,
 		'acf_end_g':0,
 		'acf_start_r':0,
@@ -350,3 +354,49 @@ def save_spots(fn_data,g_spots_g,g_spots_r,r_spots_r,g_spots,r_spots):
 	np.save(os.path.join(out_dir_temp,'%s.npy'%('g_spots')),g_spots)
 	np.save(os.path.join(out_dir_temp,'%s.npy'%('r_spots')),r_spots)
 
+
+def run_job_prepare(job):
+	fn_data = job['fn_data']
+	fn_align = job['fn_align']
+	fn_cal = job['fn_cal']
+	flags = job
+
+	dirs = prepare.get_out_dir(fn_data)
+	dir_spotfinder = dirs[3]
+
+	prepare_data(fn_data,fn_cal,flags)
+	make_composite_aligned(fn_data,fn_align,flags)
+
+	fig,ax = render_overlay(fn_data,fn_align,flags)
+	fig.set_figheight(8.)
+	fig.set_figwidth(8.)
+	[plt.savefig(os.path.join(dir_spotfinder,'overlay.%s'%(ext))) for ext in ['png','pdf']]
+
+	prepare.dump_job(os.path.join(dir_spotfinder,'job_prepare.txt'),'Job Name: Prepare for Spotfinding',job)
+
+	return fig
+
+def run_job_spotfind(job):
+	fn_data = job['fn_data']
+	fn_align = job['fn_align']
+	flags = job
+
+	dirs = prepare.get_out_dir(fn_data)
+	dir_spotfinder = dirs[3]
+
+	g_spots_g,g_spots_r,r_spots_r,g_spots,r_spots = find_spots(fn_data,fn_align,flags)
+	save_spots(fn_data,g_spots_g,g_spots_r,r_spots_r,g_spots,r_spots)
+	
+	fig1,ax1 = render_found_maxes(fn_data,fn_align,g_spots_g,g_spots_r,flags)
+	fig1.set_figheight(8.)
+	fig1.set_figwidth(8.)
+	[plt.savefig(os.path.join(dir_spotfinder,'spots_all.%s'%(ext))) for ext in ['png','pdf']]
+
+	fig2,ax2 = render_final_spots(fn_data,g_spots,r_spots,flags)
+	fig2.set_figheight(8.)
+	fig2.set_figwidth(8.)
+	[plt.savefig(os.path.join(dir_spotfinder,'spots_final.%s'%(ext))) for ext in ['png','pdf']]
+
+	prepare.dump_job(os.path.join(dir_spotfinder,'job_spotfind.txt'),'Job Name: Spotfinding',job)
+
+	return fig1,fig2

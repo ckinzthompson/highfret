@@ -5,12 +5,41 @@ import os
 import h5py
 import numpy as np
 import numba as nb
-from tqdm.notebook import tqdm
+from tqdm import tqdm
 import matplotlib.pyplot as plt
 
 from . import prepare,minmax,alignment,spotfinder,shape_evidence
 
 from scipy.special import erf
+
+def default_flags():
+	df = {
+		'fn_data':None,
+		'fn_align':None,
+		'fn_cal':None,
+
+		'split':'L/R',
+		'method':'MLE PSF',
+		'dl':5,
+		'sigma':.85,
+
+		'nsigma':61,
+		'sigma_low':.2,
+		'sigma_high':2.,
+		'flag_keeptbbins':False,
+		'optmethod':'ACF',
+		'first':0,
+		'last':0,
+
+		'pixel_real':6500.,
+		'mag':60.,
+		'bin':2.,
+		'lambda_nm':580.,
+		'NA':1.2,
+		'motion':100,
+	}
+	return df
+
 
 def mask_extract(l,movie,sigma,xyi,maxiters=1000):
 	try:
@@ -93,15 +122,15 @@ def calculate_sigma(pixel_real,mag,bin,lambda_nm,NA,motion):
 	sigma = sigma_xy/pixel_xy
 	return sigma
 
-def sweep_sigma_lnev(movie,spots,l=5,nsigma=61,sigma_low=.2,sigma_high=2.,method='acf',first=0,last=0):
+def sweep_sigma_lnev(movie,spots,l=5,nsigma=61,sigma_low=.2,sigma_high=2.,optmethod='ACF',first=0,last=0):
 	nt,nx,ny = movie.shape
 
 	if last == 0:
 		last = int(nt)
 	nt = last-first
 
-	if not method is None:
-		if method.lower() in ['max','mean','std','acf']:
+	if not optmethod is None:
+		if optmethod.lower() in ['max','mean','std','acf']:
 			nt = 1
 
 	sigmas = np.logspace(np.log10(sigma_low),np.log10(sigma_high),nsigma)
@@ -122,14 +151,14 @@ def sweep_sigma_lnev(movie,spots,l=5,nsigma=61,sigma_low=.2,sigma_high=2.,method
 
 		data = movie[first:last,xmin:xmax,ymin:ymax].astype('f').reshape((last-first,gx.size)).copy()
 
-		if not method is None:
-			if method.lower() == 'max':
+		if not optmethod is None:
+			if optmethod.lower() == 'max':
+				data = data.max(0)[None,:]
+			elif optmethod.lower() == 'mean':
 				data = data.mean(0)[None,:]
-			elif method.lower() == 'mean':
-				data = data.mean(0)[None,:]
-			elif method.lower() == 'std':
-				data = data.mean(0)[None,:]
-			elif method.lower() == 'acf':
+			elif optmethod.lower() == 'std':
+				data = data.std(0)[None,:]
+			elif optmethod.lower() == 'acf':
 				dmean = data.mean(0)[None,:]
 				data = (np.nanmean((data[1:]-dmean)*(data[:-1]-dmean),axis=0)/np.nanmean((data-dmean)**2.,axis=0))[None,:]
 
@@ -152,7 +181,7 @@ def sweep_sigma_lnev(movie,spots,l=5,nsigma=61,sigma_low=.2,sigma_high=2.,method
 	return sigmas, all_sigs
 
 
-def optimize_sigma(fn_data,fn_align,fn_cal,flag_split,l=5,nsigma=61,sigma_low=.2,sigma_high=2.,flag_keeptbbins=False,method='acf',first=0,last=0):
+def optimize_sigma(fn_data,fn_align,fn_cal,flag_split,l=5,nsigma=61,sigma_low=.2,sigma_high=2.,flag_keeptbbins=False,method='ACF',first=0,last=0):
 
 	dg,dr = prepare_data(fn_data,fn_align,fn_cal,flag_split)
 	spots_g,spots_r = load_spots(fn_data)
@@ -160,6 +189,8 @@ def optimize_sigma(fn_data,fn_align,fn_cal,flag_split,l=5,nsigma=61,sigma_low=.2
 	fig,ax = plt.subplots(1)
 
 	print('Optimizing sigma')
+
+	record = {'median':[],'maximum':[]}
 
 	for movie,spots,color,label in zip([dg,dr],[spots_g,spots_r],['tab:green','tab:red'],['Green','Red']):
 		sigmas,all_sigs = sweep_sigma_lnev(movie,spots,l,nsigma,sigma_low,sigma_high,method,first,last)
@@ -172,17 +203,19 @@ def optimize_sigma(fn_data,fn_align,fn_cal,flag_split,l=5,nsigma=61,sigma_low=.2
 		good = np.array([sigmas[gi] for gi in all_sigs[keep]])
 
 		median_sigma = np.median(good)*(1+1./nsigma) ## ~middle of bin
+		record['median'].append(median_sigma)
 		print("%s: Median sigma (px): %.3f"%(label,median_sigma))
 
 		hy,hx = ax.hist(good,bins=bins,color=color,alpha=.5)[:2]
-		max_sigma = (.5*(hx[:-1]+hx[1:]))[hy.argmax()] ## middle of bin
-		print("%s: Maximum sigma (px): %.3f"%(label,max_sigma))
+		maximum_sigma = (.5*(hx[:-1]+hx[1:]))[hy.argmax()] ## middle of bin
+		record['maximum'].append(maximum_sigma)
+		print("%s: Maximum sigma (px): %.3f"%(label,maximum_sigma))
 
 		ax.axvline(median_sigma,color=color)
-		ax.axvline(max_sigma,color=color,ls='--')
+		ax.axvline(maximum_sigma,color=color,ls='--')
 		ax.set_xlabel(r'Empirical (shaped) PSF $\sigma$ (px)')
 		ax.set_ylabel('Counts')
-	return fig, ax
+	return fig, ax, record
 
 
 def load_spots(fn_data):
@@ -226,8 +259,8 @@ def prepare_data(fn_data,fn_align,fn_cal=None,flag_split='L/R'):
 	
 	return dg,dr
 
-def get_intensities(dg,dr,spots_g,spots_r,dl,sigma,method_fxn='MLE PSF'):
-	if method_fxn == 'MLE PSF':
+def get_intensities(dg,dr,spots_g,spots_r,dl,sigma,method='MLE PSF'):
+	if method == 'MLE PSF':
 		method_fxn = ml_psf
 	else:
 		method_fxn = mask_extract
@@ -265,13 +298,64 @@ def write_hdf5(fn_data,intensities):
 	f.create_dataset(prefix, data=intensities, dtype='float64',compression="gzip")
 	f.flush()
 	f.close()
-
-
 	
+def run_job_optimize(job):
+	fn_data = job['fn_data']
+	fn_align = job['fn_align']
+	fn_cal = job['fn_cal']
+	split = job['split']
+	dl = job['dl']
+	nsigma = job['nsigma']
+	sigma_low = job['sigma_low']
+	sigma_high = job['sigma_high']
+	flag_keeptbbins = job['flag_keeptbbins']
+	optmethod = job['optmethod']
+	first = job['first']
+	last = job['last']
+	
+	dirs = prepare.get_out_dir(fn_data)
+	dir_extracter = dirs[4]
 
+	fig,ax,record = optimize_sigma(fn_data,fn_align,fn_cal,split,dl,nsigma,sigma_low,sigma_high,flag_keeptbbins,optmethod,first,last)
+	[plt.savefig(os.path.join(dir_extracter,'sigma_optimization.%s'%(ext))) for ext in ['png','pdf']]
 
+	for key in record.keys():
+		job[key] = record[key]
 
+	prepare.dump_job(os.path.join(dir_extracter,'job_optimize.txt'),'Job Name: Optimize PSF Sigma',job)
 
+	return fig
+
+def run_job_extract(job):
+	fn_data = job['fn_data']
+	fn_align = job['fn_align']
+	fn_cal = job['fn_cal']
+	split = job['split']
+	dl = job['dl']
+	method = job['method']
+	sigma = job['sigma']
+
+	dirs = prepare.get_out_dir(fn_data)
+	dir_extracter = dirs[4]
+	
+	dg,dr = prepare_data(fn_data,fn_align,fn_cal,split)
+	spots_g,spots_r = load_spots(fn_data)
+	intensities = get_intensities(dg,dr,spots_g,spots_r,dl,sigma,method)
+	
+	write_hdf5(fn_data,intensities)
+
+	fig,ax = plt.subplots(1)
+	ax.plot(np.nanmean(intensities,axis=0)[:,0],color='tab:green',lw=1)
+	ax.plot(np.nanmean(intensities,axis=0)[:,1],color='tab:red',lw=1)
+	ax.set_xlabel('Time (frame)')
+	ax.set_ylabel('Average Intensity')
+	fig.set_figheight(6.)
+	fig.set_figwidth(6.)
+	[plt.savefig(os.path.join(dir_extracter,'intensity_avg.%s'%(ext))) for ext in ['png','pdf']]
+
+	prepare.dump_job(os.path.join(dir_extracter,'job_extract.txt'),'Job Name: Extract Intensities',job)
+
+	return fig
 
 
 

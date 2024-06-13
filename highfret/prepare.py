@@ -158,3 +158,17 @@ def get_out_dir(fn_data):
 	
 	else:
 		raise Exception('File does not exist')
+	
+def dump_job(fname,description='',job={}):
+	with open(fname,'w') as f:
+		f.write('%s\n'%(description))
+		for key in job.keys():
+			f.write('%s: %s\n'%(key,job[key]))
+
+def find_tif_files(root_folder):
+	tif_files = []
+	for dirpath, dirnames, filenames in os.walk(root_folder):
+		for filename in filenames:
+			if filename.endswith('.ome.tif'):
+				tif_files.append(os.path.join(dirpath, filename))
+	return tif_files
