@@ -249,7 +249,7 @@ def prepare_data(fn_data,fn_align,fn_cal=None,flag_split='L/R'):
 		calibration = np.load(fn_cal) ## g,o,v
 
 	print('Calibrating')
-	data = prepare.apply_calibration(data,calibration)
+	prepare.apply_calibration(data,calibration) ## preparation is in place
 
 	print('Splitting')
 	if flag_split == 'L/R':

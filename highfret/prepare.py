@@ -27,6 +27,8 @@ except:
 
 @nb.njit
 def apply_calibration(data,cal):
+	if data.shape[1] != cal.shape[1] or data.shape[2] != cal.shape[2]:
+		raise Exception('Calibration is for a movie of a different size. Were you binning?')
 	g,o,v = cal
 	for t in range(data.shape[0]):
 		for i in range(data.shape[1]):
@@ -34,9 +36,10 @@ def apply_calibration(data,cal):
 				dtemp = int((float(data[t,i,j])-o[i,j])/g[i,j])
 				if dtemp < 0:
 					dtemp = 0
+				if dtemp > 2**16-1:
+					dtemp = 2**16-1
 				data[t,i,j] = dtemp
-	return data
-
+	# return data
 
 
 def acf(movie,median_n=11):
@@ -68,7 +71,10 @@ def _acf(movie):
 				img[i,j] += (float(movie[t,i,j])-mean[i,j])*(float(movie[t-1,i,j])-mean[i,j])
 			img[i,j] /= (nt-1)
 			# img[i,j] /= mean2[i,j]
-			img[i,j] /= (mean2[i,j]-mean[i,j]**2.)
+			if (mean2[i,j]-mean[i,j]**2.) == 0:
+				img[i,j] = 0.
+			else:
+				img[i,j] /= (mean2[i,j]-mean[i,j]**2.)
 	return img
 
 def bin2x(d):
