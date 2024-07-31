@@ -1,7 +1,7 @@
 import numba as nb
 import numpy as np
 
-@nb.njit
+@nb.njit(cache=True)
 def get_punches(img,spots,l=11,fill_value=0.):
 	nx,ny = img.shape
 	ns,_ = spots.shape
@@ -24,7 +24,7 @@ def get_punches(img,spots,l=11,fill_value=0.):
 		out[i,l-(mx-xmin):l+(xmax-mx),l-(my-ymin):l+(ymax-my)] = img[xmin:xmax,ymin:ymax]
 	return out
 
-@nb.njit
+@nb.njit(cache=True)
 def tile_punches(punches):
 	ns,l1,l2 = punches.shape
 	ntiles = int(np.sqrt(ns))

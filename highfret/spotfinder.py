@@ -19,20 +19,21 @@ def default_flags():
 		'fn_cal':None,
 
 		'split':'L/R',
-		'acf_cutoff':0.2,
+		'acf_cutoff':0.15,
 		'matched_spots':True,
 		'acf_start_g':0,
 		'acf_end_g':0,
 		'acf_start_r':0,
 		'acf_end_r':0,
-		'smooth':0.6,
+		'smooth':0.5,
 		'which':'Both',
 		'localmax_region':1,
 		'refine':True,
+		'median_filter':21,
 	}
 	return df
 
-@nb.njit
+@nb.njit(cache=True)
 def compare_close_spots(spots1,spots2,cutoff):
 	### replace close spots with their average position
 	kept = 0
@@ -61,7 +62,7 @@ def compare_close_spots(spots1,spots2,cutoff):
 				break
 	return out1[:kept],out2[:kept]
 
-@nb.njit
+@nb.njit(cache=True)
 def remove_close_spots(spots,cutoff):
 	### replace close spots with their average position
 	kept = 0
@@ -88,7 +89,7 @@ def remove_close_spots(spots,cutoff):
 			kept += 1
 	return out[:kept]
 
-@nb.njit
+@nb.njit(cache=True)
 def find_outofframe(img,spots):
 	nx,ny = img.shape
 	ns,_ = spots.shape
@@ -119,15 +120,18 @@ def prepare_data(fn_data,fn_cal,flags):
 		dg,dr = prepare.split_lr(data)
 	elif flags['split'] == 'T/B':
 		dg,dr = prepare.split_tb(data)
-
+	
+	print('Filtering')
+	dg = prepare.median_scmos(dg,flags['median_filter'])
+	dr = prepare.median_scmos(dr,flags['median_filter'])
 	
 	end_g = dg.shape[0] if flags['acf_end_g'] == 0 else flags['acf_end_g']
 	end_r = dr.shape[0] if flags['acf_end_r'] == 0 else flags['acf_end_r']
 	print('ACF (Green) Start/End: %d/%d'%(flags['acf_start_g'],end_g))
 	print('ACF (Red)   Start/End: %d/%d'%(flags['acf_start_g'],end_r))
 	print('ACFing')
-	imgg = prepare.acf(dg[flags['acf_start_g']:end_g])
-	imgr = prepare.acf(dr[flags['acf_start_r']:end_r])
+	imgg = prepare.acf(dg[flags['acf_start_g']:end_g],flags['median_filter'])
+	imgr = prepare.acf(dr[flags['acf_start_r']:end_r],flags['median_filter'])
 
 	dirs = prepare.get_out_dir(fn_data)
 	out_dir_temp = dirs[1]
@@ -354,6 +358,19 @@ def save_spots(fn_data,g_spots_g,g_spots_r,r_spots_r,g_spots,r_spots):
 	np.save(os.path.join(out_dir_temp,'%s.npy'%('g_spots')),g_spots)
 	np.save(os.path.join(out_dir_temp,'%s.npy'%('r_spots')),r_spots)
 
+def safe_align(fn_data, fn_align):
+	## There is a chance the user didn't give an alignment. 
+
+	import tempfile
+	from .modelselect_alignment import alignment_guess_coefficients 
+	
+	if fn_align == '': 
+		dg,dr = get_prepared_data(fn_data)
+		theta = alignment_guess_coefficients(dr,dg) ## make a Fourier guess....
+		with tempfile.NamedTemporaryFile(delete=False, suffix='.npy') as temp_file:
+			np.save(temp_file, theta)
+			fn_align = temp_file.name
+	return fn_align
 
 def run_job_prepare(job):
 	fn_data = job['fn_data']
@@ -365,6 +382,7 @@ def run_job_prepare(job):
 	dir_spotfinder = dirs[3]
 
 	prepare_data(fn_data,fn_cal,flags)
+	fn_align = safe_align(fn_data,fn_align)
 	make_composite_aligned(fn_data,fn_align,flags)
 
 	fig,ax = render_overlay(fn_data,fn_align,flags)
@@ -382,6 +400,8 @@ def run_job_spotfind(job):
 	flags = job
 
 	dirs = prepare.get_out_dir(fn_data)
+	fn_align = safe_align(fn_data,fn_align)
+
 	dir_spotfinder = dirs[3]
 
 	g_spots_g,g_spots_r,r_spots_r,g_spots,r_spots = find_spots(fn_data,fn_align,flags)

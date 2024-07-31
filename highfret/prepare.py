@@ -7,7 +7,8 @@ import os
 import re
 
 import tifffile
-from scipy.ndimage import median_filter
+
+from .fast_median import median_scmos, med_huang_floatimg
 
 try:
 	import zarr
@@ -25,7 +26,7 @@ except:
 	def load(fn):
 		return tifffile.imread(fn)
 
-@nb.njit
+@nb.njit(cache=True)
 def apply_calibration(data,cal):
 	if data.shape[1] != cal.shape[1] or data.shape[2] != cal.shape[2]:
 		raise Exception('Calibration is for a movie of a different size. Were you binning?')
@@ -42,18 +43,79 @@ def apply_calibration(data,cal):
 	# return data
 
 
-def acf(movie,median_n=11):
-	q = _acf(movie)
-	bg = median_filter(q,median_n)
+def acf(movie,median_n=21):
+	q = _acf(movie) ## this should be a double so don't use median_scmos
+	# q = _acf_alt(movie) ## this should be a double so don't use median_scmos
+	# from scipy.ndimage import median_filter 
+	# bg = median_filter(q,median_n)
+	bg = med_huang_floatimg(q,median_n)
 	return q-bg
 
-@nb.njit
+@nb.njit(cache=True)
+# @nb.njit(nogil=True,parallel=True,fastmath=True)
+def _acf_alt(movie):
+	'''
+	can take anything including unint
+	outputs double
+	'''
+	nt,ni,nj = movie.shape
+	img0 = np.zeros((ni,nj),dtype='double')
+	img1 = np.zeros((ni,nj),dtype='double')
+	med1 = float(np.median(movie[0]))
+	med2 = float(med1)
+
+	for t in range(1,nt):
+		med2 = float(np.median(movie[t]))
+		if np.isnan(med2):
+			raise Exception('wtf')
+		for i in range(ni):
+			for j in range(nj):
+				img1[i,j] += (float(movie[t,i,j])-med2)*(float(movie[t-1,i,j])-med1)
+				img0[i,j] += (float(movie[t,i,j])-med2)**2.
+		med1 = med2
+	img0 /= float(nt-1)
+	img1 /= float(nt-1)
+	img1 /= img0
+	return img1
+
+# @nb.njit(cache=True)
+# # @nb.njit(nogil=True,parallel=True,fastmath=True)
+# def _acf(movie):
+# 	'''
+# 	can take anything including unint
+# 	outputs double
+# 	'''
+# 	nt,ni,nj = movie.shape
+# 	img = np.zeros((ni,nj),dtype=nb.double)
+# 	mean = np.zeros((ni,nj),dtype=nb.double)
+# 	mean2 = np.zeros((ni,nj),dtype=nb.double)
+# 	for i in range(ni):
+# 		for j in range(nj):
+# 			for t in range(nt):
+# 				mean[i,j] += float(movie[t,i,j])
+# 				mean2[i,j] += float(movie[t,i,j])**2.
+# 			mean[i,j] /= nt
+# 			mean2[i,j] /= nt
+# 	for i in range(ni):
+# 		for j in range(nj):
+# 			for t in range(1,nt):
+# 				img[i,j] += (float(movie[t,i,j])-mean[i,j])*(float(movie[t-1,i,j])-mean[i,j])
+# 			img[i,j] /= (nt-1)
+# 			# img[i,j] /= mean2[i,j]
+# 			if (mean2[i,j]-mean[i,j]**2.) == 0:
+# 				img[i,j] = 0.
+# 			else:
+# 				img[i,j] /= (mean2[i,j]-mean[i,j]**2.)
+# 	return img
+
+@nb.njit(cache=True)
 # @nb.njit(nogil=True,parallel=True,fastmath=True)
 def _acf(movie):
 	'''
 	can take anything including unint
 	outputs double
 	'''
+	tau = 5
 	nt,ni,nj = movie.shape
 	img = np.zeros((ni,nj),dtype=nb.double)
 	mean = np.zeros((ni,nj),dtype=nb.double)
@@ -67,9 +129,9 @@ def _acf(movie):
 			mean2[i,j] /= nt
 	for i in range(ni):
 		for j in range(nj):
-			for t in range(1,nt):
-				img[i,j] += (float(movie[t,i,j])-mean[i,j])*(float(movie[t-1,i,j])-mean[i,j])
-			img[i,j] /= (nt-1)
+			for t in range(tau,nt):
+				img[i,j] += (float(movie[t,i,j])-mean[i,j])*(float(movie[t-tau,i,j])-mean[i,j])
+			img[i,j] /= (nt-tau)
 			# img[i,j] /= mean2[i,j]
 			if (mean2[i,j]-mean[i,j]**2.) == 0:
 				img[i,j] = 0.
@@ -135,7 +197,9 @@ def split_quad(d):
 
 
 def get_out_dir(fn_data):
+	print(fn_data)
 	filename = re.sub(r'\s+', '', fn_data)
+	print(filename,os.path.exists(filename))
 	if os.path.exists(filename):
 
 		## pull out file name from path
@@ -178,3 +242,4 @@ def find_tif_files(root_folder):
 			if filename.endswith('.ome.tif'):
 				tif_files.append(os.path.join(dirpath, filename))
 	return tif_files
+

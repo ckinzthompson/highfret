@@ -3,8 +3,7 @@ highfret - TIRF microscopy data processing for smFRET experiments
 """
 
 __title__ = "highfret"
-__version__ = "0.1.1"
-
+__version__ = "0.2.0"
 __description__ = "highfret - TIRF microscopy data processing for smFRET experiments."
 
 __license__ = "GPLv3"

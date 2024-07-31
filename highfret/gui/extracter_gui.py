@@ -8,11 +8,7 @@ from IPython.display import display,clear_output
 
 from .. import extracter,spotfinder,prepare
 
-fn_data = None
-fn_align = None
-fn_cal = None
-
-def gui_extracter():
+def gui_extracter(fn_data='',fn_align='',fn_cal=''):
 	out = widgets.Output()
 
 	default = extracter.default_flags()
@@ -20,13 +16,11 @@ def gui_extracter():
 	wl = widgets.Layout(width='80%',height='24pt')
 	ws = {'description_width':'initial'}
 
-	text_data_filename = widgets.Textarea(value=default['fn_data'],placeholder='Enter microscope data file name (.tif)',description="Data file name",layout=wl, style=ws)
-	text_align_filename = widgets.Textarea(value=default['fn_align'],placeholder='Enter alignment file name (.npy)',description="Alignment file name",layout=wl, style=ws)
-	text_calibration_filename = widgets.Textarea(value=default['fn_cal'],placeholder='Enter calibration file name (.npy) [optional]',description="Calibration file name",layout=wl, style=ws)
-	accordion_files = widgets.Accordion(children=[widgets.VBox([text_data_filename,text_align_filename,text_calibration_filename,]),], titles=('Files',))
-	accordion_files.selected_index = 0
+	text_data_filename = widgets.Textarea(value=fn_data,placeholder='Enter microscope data file name (.tif)',description="Data file name",layout=wl, style=ws)
+	text_align_filename = widgets.Textarea(value=fn_align,placeholder='Enter alignment file name (.npy)',description="Alignment file name",layout=wl, style=ws)
+	text_calibration_filename = widgets.Textarea(value=fn_cal,placeholder='Enter calibration file name (.npy) [optional]',description="Calibration file name",layout=wl, style=ws)
 
-	dropdown_method = widgets.Dropdown(value=default['method'], options=['MLE PSF','Mask (4px)'], ensure_option=True,description='Method:',style=ws)
+	dropdown_method = widgets.Dropdown(value=default['method'], options=['MLE PSF','Max Px',], ensure_option=True,description='Method:',style=ws)
 	dropdown_split = widgets.Dropdown(value=default['split'],options=['L/R','T/B'],ensure_option=True,description='Split:', style=ws)
 	dropdown_dl = widgets.Dropdown(value=default['dl'], options=[1,2,3,4,5,6,7,8,9,10,11],description='Extraction Radius (pixels)',style=ws)
 	float_pixel_real = widgets.BoundedFloatText(value=default['pixel_real'],min=1,max=1000000,step=.1,description='Pixel Length (nm)',style=ws)
@@ -36,27 +30,39 @@ def gui_extracter():
 	float_NA= widgets.BoundedFloatText(value=default['NA'],min=0.,max=1000000,step=.2,description='Numerical Aperture',style=ws)
 	float_motion = widgets.BoundedFloatText(value=default['motion'],min=0.,max=1000000,step=.2,description='Motion RMSD (nm)',style=ws)
 
+	int_median_filter = widgets.BoundedIntText(value=default['median_filter'],min=0,max=1000,description='Median Filter (px)',style=ws)
+	int_max_restarts = widgets.BoundedIntText(value=default['max_restarts'],min=1,max=100,description='Maximum No. Restarts',style=ws)
+	sbool = 'True' if default['neighbors'] else 'False'
+	dropdown_neighbors = widgets.Dropdown(value=sbool,options=['True','False'],ensure_option=True,description='Include Neighbors?',style=ws)
+	sbool = 'True' if default['correct'] else 'False'
+	dropdown_correct = widgets.Dropdown(value=sbool,options=['True','False'],ensure_option=True,description='Global BG Correction?',style=ws)
+	float_cutoff_rel = widgets.BoundedFloatText(value=np.log10(default['cutoff_rel']),min=-10,max=0.,step=1,description='log10(Convergence Threshold)',style=ws)
+
 	float_sigma = widgets.BoundedFloatText(value=default['sigma'],min=0,max=1000000,step=.01,description='PSF width (pixels)',style=ws)
 
-	int_nsigma = widgets.BoundedIntText(value=default['nsigma'],min=1,max=1000000,description='Number of Sigmas',layout=wl,style=ws)
-	range_minmaxsigma = widgets.FloatRangeSlider(value=[default['sigma_low'], default['sigma_high']],min=0,max=10,step=.01,description='Sigma Limits:',orientation='horizontal',readout_format='.2f',layout=wl,style=ws)
-	sbool = 'True' if default['flag_keeptbbins'] else 'False'
-	dropdown_keeptbbins = widgets.Dropdown(value=sbool,options=['True','False'],ensure_option=True,description='Keep First/Last Bins:', layout=wl, style=ws)
-	dropdown_optmethod= widgets.Dropdown(value=default['optmethod'],options=['All','ACF','Max','Mean'],ensure_option=True,description='Data Treatment:', layout=wl, style=ws)
-	int_opt_start = widgets.IntText(value=default['first'],description='First Frame', layout=wl,style=ws)
-	int_opt_end = widgets.IntText(value=default['last'],description='Last Frame', layout=wl,style=ws)
+	int_nsigma = widgets.BoundedIntText(value=default['nsigma'],min=1,max=1000000,description='Number of Sigmas',style=ws)
+	range_minmaxsigma = widgets.FloatRangeSlider(value=[default['sigma_low'], default['sigma_high']],min=0,max=10,step=.01,description='Sigma Limits:',orientation='horizontal',readout_format='.2f',style=ws)
+	sbool = 'True' if default['keeptbbins'] else 'False'
+	dropdown_keeptbbins = widgets.Dropdown(value=sbool,options=['True','False'],ensure_option=True,description='Keep First/Last Bins:',  style=ws)
+	dropdown_optmethod= widgets.Dropdown(value=default['optmethod'],options=['All','ACF','Max','Mean'],ensure_option=True,description='Data Treatment:',  style=ws)
+	int_opt_start = widgets.IntText(value=default['first'],description='First Frame', style=ws)
+	int_opt_end = widgets.IntText(value=default['last'],description='Last Frame', style=ws)
 	button_optimize = widgets.Button(description='Optimize Sigma',layout=widgets.Layout(width='2in',height='0.25in'),style=ws)
 
 	tab_microscope = widgets.Tab(description='')
 	tab_microscope.children = [
-		widgets.VBox([dropdown_split,dropdown_method,dropdown_dl,float_sigma]),
-		widgets.VBox([dropdown_split,dropdown_method,dropdown_dl,float_pixel_real,float_mag,dropdown_bin,float_lambda_nm,float_NA,float_motion,]),
+		widgets.VBox([dropdown_split,dropdown_method,dropdown_dl,int_median_filter,dropdown_neighbors,int_max_restarts,float_cutoff_rel,dropdown_correct,float_sigma]),
+		widgets.VBox([dropdown_split,dropdown_method,dropdown_dl,int_median_filter,dropdown_neighbors,int_max_restarts,float_cutoff_rel,dropdown_correct,float_pixel_real,float_mag,dropdown_bin,float_lambda_nm,float_NA,float_motion,]),
 		widgets.VBox([dropdown_split,dropdown_dl,int_nsigma,range_minmaxsigma,dropdown_keeptbbins,dropdown_optmethod,int_opt_start,int_opt_end,button_optimize]),
 	]
 	tab_microscope.titles = ['Simple','Advanced','Optimize']
 
+	accordion = widgets.Accordion(children=[widgets.VBox([text_data_filename,text_align_filename,text_calibration_filename,]),tab_microscope], titles=('Files','Extract'))
+	# accordion.selected_index = 0
+
 	button_extract = widgets.Button(description="Extract",layout=widgets.Layout(width='2in',height='0.25in'),style=ws)
-	vbox_extract = widgets.VBox([accordion_files, tab_microscope, button_extract,])
+	title = widgets.HTML(value="<h3>Trace Extraction</h3>")
+	vbox_extract = widgets.VBox([title,accordion, button_extract,])
 
 	def show_prep_ui():
 		with out:
@@ -70,11 +76,15 @@ def gui_extracter():
 		align_filename = re.sub(r'\s+', '', text_align_filename.value)
 		cal_filename = re.sub(r'\s+', '', text_calibration_filename.value)
 
+		check_these = [data_filename,]
+		if align_filename == '':
+			print('No alignment provided. Using Fourier Guess')
+		else:
+			check_these += [align_filename,]
 		if cal_filename == '':
-			check_these = [data_filename,align_filename]
 			print('Ignoring Calibration')
 		else:
-			check_these = [data_filename,align_filename,cal_filename]
+			check_these += [cal_filename,]
 
 		for fn in check_these:
 			if os.path.exists(fn):
@@ -98,10 +108,15 @@ def gui_extracter():
 		job['nsigma'] = int_nsigma.value
 		job['sigma_low'] = range_minmaxsigma.value[0]
 		job['sigma_high'] = range_minmaxsigma.value[1]
-		job['flag_keeptbbins'] = dropdown_keeptbbins.value == "True"
+		job['keeptbbins'] = dropdown_keeptbbins.value == "True"
 		job['optmethod'] = dropdown_optmethod.value
 		job['first'] = int_opt_start.value
 		job['last'] = int_opt_end.value
+		job['median_filter'] = int_median_filter.value
+		job['neighbors'] = dropdown_neighbors.value == "True"
+		job['max_restarts'] = int_max_restarts.value
+		job['cutoff_rel'] = 10.**float_cutoff_rel.value
+		job['correct'] = dropdown_correct.value == "True"
 
 		if tab_microscope.selected_index == 0:
 			job['sigma'] = float(float_sigma.value)

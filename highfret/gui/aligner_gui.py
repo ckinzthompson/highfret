@@ -18,7 +18,11 @@ fig = None
 ax = None
 
 
-def gui_aligner():
+def gui_aligner(fname_data=''):
+	global fn_data
+	if fname_data != '':
+		fn_data = fname_data
+
 	out = widgets.Output()
 
 	# ## initial guess to file
@@ -28,18 +32,18 @@ def gui_aligner():
 	# 	if fn.endswith('.tif'):
 	# 		default = fn
 	# 		break
-	default = None
+	# default = None
 
 	wl = widgets.Layout(width='80%',height='24pt')
 	ws = {'description_width':'initial'}
 	bl = layout=widgets.Layout(width='2in',height='0.25in')
 	
 	## Load widgets
-	text_filename = widgets.Textarea(value=default,placeholder='Enter file to align',description="File name", layout=wl, style=ws)
+	text_filename = widgets.Textarea(value=fn_data,placeholder='Enter file to align',description="File name", layout=wl, style=ws)
 	button_prepare = widgets.Button(description="Prepare Data", layout=bl)
 	int_start = widgets.IntText(value=0,description='First Frame', style=ws)
 	int_end = widgets.IntText(value=0,description='Last Frame ', style=ws)
-	dropdown_method = widgets.Dropdown(value='mean',options=['mean','acf','First Frame'],ensure_option=True,description='Method:', style=ws)
+	dropdown_method = widgets.Dropdown(value='acf',options=['mean','acf','First Frame'],ensure_option=True,description='Method:', style=ws)
 	dropdown_split = widgets.Dropdown(value='L/R',options=['L/R','T/B'],ensure_option=True,description='Split:', style=ws)
 	vbox_prepare = widgets.VBox([text_filename,int_start,int_end,dropdown_method,dropdown_split,button_prepare,])
 
@@ -65,8 +69,10 @@ def gui_aligner():
 	vbox_plot = widgets.VBox([dropdown_zoom,button_plot,])
 
 	## All together
+	title = widgets.HTML(value="<h3>Alignment</h3>")
 	tabs_total = widgets.Tab(children=[vbox_prepare, vbox_align, vbox_plot,],titles=['Load','Align','Plot'])
-
+	# accordion = widgets.Accordion(children=[vbox_prepare, vbox_align, vbox_plot],titles=('Files','Align','Plot'))
+	# disp = widgets.VBox([title,accordion])
 	with out:
 		display(tabs_total)
 

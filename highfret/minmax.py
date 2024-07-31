@@ -10,7 +10,7 @@ def spots_to_map(img,spots,n_clip=5):
 	mask = clip_edges(mask,(0,n_clip,n_clip))
 	return mask[0]
 
-@nb.njit#(nogil=True,parallel=True,fastmath=True)
+@nb.njit(cache=True)#(nogil=True,parallel=True,fastmath=True)
 def local_max_mask(data,ni,nj,nk):
 
 	if data.ndim == 2:
@@ -39,7 +39,7 @@ def local_max_mask(data,ni,nj,nk):
 										break
 	return mask
 
-@nb.njit#(nogil=True,parallel=True,fastmath=True)
+@nb.njit(cache=True)#(nogil=True,parallel=True,fastmath=True)
 def local_min_mask(data,ni,nj,nk):
 
 	if data.ndim == 2:

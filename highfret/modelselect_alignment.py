@@ -10,7 +10,7 @@ from .shape_evidence import ln_evidence
 from tqdm import tqdm
 
 
-@nb.njit
+@nb.njit(cache=True)
 def polynomial_get_order(a):
 	''' figure out polynomial order from list of coefficients '''
 	ncoef = a.size
@@ -24,7 +24,7 @@ def polynomial_get_order(a):
 		raise Exception('Wrong number of coefficients')
 	return K
 
-@nb.njit
+@nb.njit(cache=True)
 def polynomial_transform_many(x,y,a,b,K):
 	ndata = x.size
 	xp = np.zeros(ndata)
@@ -33,7 +33,7 @@ def polynomial_transform_many(x,y,a,b,K):
 		xp[i],yp[i] = polynomial_transform(x[i],y[i],a,b,K)
 	return xp,yp
 
-@nb.njit
+@nb.njit(cache=True)
 def polynomial_transform(x1,y1,a,b,K):
 	'''
 	transforms (x,y)->(x',y') where:
@@ -99,7 +99,7 @@ def polynomial_transform(x1,y1,a,b,K):
 	return x,y
 
 # @nb.njit
-@nb.njit(nogil=True,parallel=True,fastmath=True)
+@nb.njit(nogil=True,parallel=True,fastmath=True,cache=True)
 def rev_interpolate_polynomial(q,a,b):
 	'''
 	Okay a little confusing, but the easiest way to transform an image is actually to work backwards.
@@ -215,7 +215,7 @@ def rev_interpolate_polynomial(q,a,b):
 			out[i,j] = (x2-x)*q[ii,jj]*(y2-y) + (x2-x)*q[ii,jj+1]*(y-y1) + (x-x1)*q[ii+1,jj]*(y2-y) + (x-x1)*q[ii+1,jj+1]*(y-y1)
 	return out
 
-# @nb.njit
+# @nb.njit(cache=True)
 # def interpolate_linearshift(q,dx,dy):
 # 	dx from 1 to 2, dy from 1 to 2
 # 	a = np.array((-dx,1.,0.))
@@ -230,7 +230,7 @@ def check_distorted(q,theta,factor=.5):
 	K = polynomial_get_order(a)
 	return _check_distorted(a,b,K,q,theta,factor)
 
-@nb.njit
+@nb.njit(cache=True)
 def _check_distorted(a,b,K,q,theta,factor):
 	div = 4
 	ll1 = q.shape[0]//div

@@ -10,7 +10,7 @@ lnprior_slope = np.log(10000.) ## 10k max photons
 lnprior_offset = np.log(1000.) ## offset is < 1000
 lnprior_scale = np.log(np.log(1000.)-np.log(1.))
 
-@nb.njit#(cache=True)
+@nb.njit(cache=True)
 def ln_evidence(x,y):
 	### 2.2.2
 
@@ -38,7 +38,7 @@ def ln_evidence(x,y):
 	out = gammaln(M) -N/2.*np.log(N) -.5*np.log(vx) -np.log(2) - lnprior_slope - lnprior_offset - lnprior_scale -M*np.log(np.pi) -M*np.log(vy) -M*np.log(1.-r2) + np.log(1.+r/np.abs(r)*betainc(.5,M,r2))
 	return out
 
-@nb.njit#(cache=True)
+@nb.njit(cache=True)
 def null_ln_evidence(y):
 	## 2.2.4
 
