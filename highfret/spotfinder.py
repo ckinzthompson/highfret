@@ -1,309 +1,109 @@
-import warnings 
-warnings.filterwarnings("ignore", category=UserWarning, module="numba")
-
-import os
-import time
 import tifffile
 import numpy as np
-import numba as nb
+from pathlib import Path
 import matplotlib.pyplot as plt
 
-from scipy.ndimage import gaussian_filter
-from . import prepare,minmax,alignment,punch
+from .containers import general_analysis_class
+from .support.spotfinder import compare_close_spots,remove_close_spots,find_outofframe,refine_simple,locate_good_localmax,transform_back_spots,prep_images
+from .support.modelselect_alignment import nps2rgb
 
-
-def default_flags():
-	df = {
-		'fn_data':None,
-		'fn_align':None,
-		'fn_cal':None,
-
-		'split':'L/R',
-		'acf_cutoff':0.15,
-		'matched_spots':True,
-		'acf_start_g':0,
-		'acf_end_g':0,
-		'acf_start_r':0,
-		'acf_end_r':0,
-		'smooth':0.5,
-		'which':'Both',
-		'localmax_region':1,
-		'refine':True,
-		'median_filter':21,
-	}
-	return df
-
-@nb.njit(cache=True)
-def compare_close_spots(spots1,spots2,cutoff):
-	### replace close spots with their average position
-	kept = 0
-	ns1 = spots1.shape[0]
-	ns2 = spots2.shape[0]
-	out1 = np.zeros((ns1,2))
-	out2 = np.zeros((ns2,2))
-
-	already_found1 = np.zeros(ns1,dtype='int')
-	already_found2 = np.zeros(ns2,dtype='int')
-
-	for i in range(ns1):
-		if already_found1[i] == 1:
-			continue 
-		for j in range(ns2):
-			if already_found2[j] == 1:
-				continue
-
-			r_ij = np.sqrt((float(spots1[i,0])-float(spots2[j,0]))**2.+(float(spots1[i,1])-float(spots2[j,1]))**2.)
-			if r_ij < cutoff:
-				already_found1[i] = 1
-				already_found2[j] = 1
-				out1[kept] = spots1[i]
-				out2[kept] = spots2[j]
-				kept +=1
-				break
-	return out1[:kept],out2[:kept]
-
-@nb.njit(cache=True)
-def remove_close_spots(spots,cutoff):
-	### replace close spots with their average position
-	kept = 0
-	ns = spots.shape[0]
-	out = np.zeros_like(spots)
-
-	already_found = np.zeros(ns,dtype='int')
-
-	for i in range(ns):
-		if already_found[i] == 1:
-			continue 
-		for j in range(i+1,ns):
-			r_ij = np.sqrt((float(spots[i,0])-float(spots[j,0]))**2.+(float(spots[i,1])-float(spots[j,1]))**2.)
-			if r_ij < cutoff:
-				already_found[i] = 1
-				already_found[j] = 1
-				out[kept,0] = (float(spots[i,0])+float(spots[j,0]))/2.
-				out[kept,1] = (float(spots[i,1])+float(spots[j,1]))/2.
-				kept +=1
-				break
-		if already_found[i] == 0:
-			out[kept,0] = float(spots[i,0])
-			out[kept,1] = float(spots[i,1])
-			kept += 1
-	return out[:kept]
-
-@nb.njit(cache=True)
-def find_outofframe(img,spots):
-	nx,ny = img.shape
-	ns,_ = spots.shape
-	keep = np.ones(ns,dtype='bool')
-
-	for i in range(ns):
-		if spots[i,0] < 0 or spots[i,0] >= nx:
-			keep[i] = False
-		if spots[i,1] < 0 or spots[i,1] >= ny:
-			keep[i] = False
-	return keep
-
-def prepare_data(fn_data,fn_cal,flags):
-	print('Loading')
-	data = prepare.load(fn_data)
-
-	if fn_cal is None:
-		calibration = np.zeros((3,data.shape[1],data.shape[2])) ## _,o,v
-		calibration[0] += 1. ## g,_,_
-	else:
-		calibration = np.load(fn_cal) ## g,o,v
+def find_spots(analysis: general_analysis_class, smooth, localmax_region, acf_cutoff, refine, matched_spots, which):
+	ncolors = analysis.img.shape[0]
 	
-	print('Calibrating')
-	prepare.apply_calibration(data,calibration) ## preparation is in place
+	analysis.log += f'Spotfinding:\n'
+	#### STEP 1
+	## Transform all into color space 0
+	analysis.log += f'\tTransforming all images into color space 0\n'
+	imgs = prep_images(analysis.img, analysis.transforms, smooth)
+
+	#### Find color i spots in color 0 coordinates
+	separate_spots = [locate_good_localmax(img,localmax_region,acf_cutoff) for img in imgs]
+	analysis.log += f'\tLocated Spots -- {",".join([f"Color {i}: {separate_spots[i].shape[0]}" for i in range(len(separate_spots))])}\n'
+
+	if refine:
+		separate_spots = [refine_simple(imgs[i],separate_spots[i]) for i in range(ncolors)]
+		analysis.log += f'\tRefined reduced spots\n'
 	
-	print('Splitting')
-	if flags['split'] == 'L/R':
-		dg,dr = prepare.split_lr(data)
-	elif flags['split'] == 'T/B':
-		dg,dr = prepare.split_tb(data)
-	
-	print('Filtering')
-	dg = prepare.median_scmos(dg,flags['median_filter'])
-	dr = prepare.median_scmos(dr,flags['median_filter'])
-	
-	end_g = dg.shape[0] if flags['acf_end_g'] == 0 else flags['acf_end_g']
-	end_r = dr.shape[0] if flags['acf_end_r'] == 0 else flags['acf_end_r']
-	print('ACF (Green) Start/End: %d/%d'%(flags['acf_start_g'],end_g))
-	print('ACF (Red)   Start/End: %d/%d'%(flags['acf_start_g'],end_r))
-	print('ACFing')
-	imgg = prepare.acf(dg[flags['acf_start_g']:end_g],flags['median_filter'])
-	imgr = prepare.acf(dr[flags['acf_start_r']:end_r],flags['median_filter'])
+	#### STEP 2
+	reduced_spots = [spotsi.copy() for spotsi in separate_spots]	
 
-	dirs = prepare.get_out_dir(fn_data)
-	out_dir_temp = dirs[1]
-	out_dir = dirs[3]
-
-	print('Prepared Shapes: %s, %s'%(str(imgg.shape),str(imgr.shape)))
-	np.save(os.path.join(out_dir_temp,'prep_imgg.npy'),imgg)
-	np.save(os.path.join(out_dir_temp,'prep_imgr.npy'),imgr)
-
-	with open(os.path.join(out_dir,'details_spotfinder.txt'),'w') as f:
-		out = "Aligner - %s\n=====================\n"%(time.ctime())
-		out += '%s \n'%(fn_data)
-		out += '%s \n=====================\n'%(str(data.shape))
-		out += 'Avg. Cal: Gain  : %.2f'%(calibration[0].mean())
-		out += 'Avg. Cal: Offset: %.2f'%(calibration[1].mean())
-		if flags['split'] == 'L/R':
-			out += 'Split: Left/Right\n'
-		else:
-			out += 'Split: Top/Bottom\n'
-		out += 'ACF (Green) Start/End: %d/%d'%(flags['acf_start_g'],end_g)
-		out += 'ACF (Red)   Start/End: %d/%d'%(flags['acf_start_r'],end_r)
-		f.write(out)
-	print('Preparation Done')
-
-def get_prepared_data(fn_data):
-	#### Load prepared image
-	dirs = prepare.get_out_dir(fn_data)
-	out_dir_temp = dirs[1]
-	out_dir = dirs[3]
-
-	if not os.path.exists(os.path.join(out_dir_temp,'prep_imgg.npy')) or not os.path.exists(os.path.join(out_dir_temp,'prep_imgr.npy')):
-		raise Exception('Please run prepare_data first')
-		
-	img1 = np.load(os.path.join(out_dir_temp,'prep_imgg.npy'))
-	img2 = np.load(os.path.join(out_dir_temp,'prep_imgr.npy'))
-
-	return img1,img2
-
-def refine_simple(img, spots, l=2, max_shift=1.):
-	punches = punch.get_punches(img, spots, l=l, fill_value=np.nan)
-	
-	x = np.arange(punches.shape[1]).astype('double')
-	x -= float(x.size//2) + 0.
-	gx,gy = np.meshgrid(x,x,indexing = 'ij')
-
-	bad = np.all(np.isnan(punches),axis=(1,2))
-	punches[bad] = 0
-	sx = np.nanmean(punches*gx[None,:,:],axis=(1,2))
-	sy = np.nanmean(punches*gy[None,:,:],axis=(1,2))
-	sx[np.abs(sx)>max_shift] = 0.
-	sy[np.abs(sy)>max_shift] = 0.
-
-	out = spots.copy()
-	out[:,0] += sx
-	out[:,1] += sy
-	return out
-
-def prep_imgs(imgg,imgr,theta,flags,align=True):
-	if flags['smooth'] > 0:
-		imgg = gaussian_filter(imgg,flags['smooth'])
-		imgr = gaussian_filter(imgr,flags['smooth'])
-	
-	if align:
-		######## N.B. invert is not reliable
-		#### Do everything in green space
-		## theta is R to G, but interp happens backwards (ie for theta, it's G to R)
-		## therefore inv_theta (G to R) gives ability to transform R to G
-		inv_theta = alignment.invert_transform(theta,shape=imgg.shape,nl=40) 
-		a,b = alignment.coefficients_split(inv_theta)
-		imgr = alignment.rev_interpolate_polynomial(imgr,a,b) ## img2 is R in green space 
-	return imgg,imgr
-
-def locate_good_localmax(img,flags):
-	dl = flags['localmax_region']
-	localmaxes = minmax.local_max_mask(img[None,:,:],0,dl,dl)[0]
-	spots = np.nonzero(localmaxes) ## [2,N]
-	spots = (np.array(spots).T).astype('double') ## [N,2]
-	intensities = img[localmaxes].flatten()
-	keep = intensities >= flags['acf_cutoff']
-	spots = spots[keep]
-	return spots
-
-def find_spots(fn_data,fn_align,flags):
-	#### Nomenclature:
-	#### <color space>_spots_<data space> -- ie, g_spots_r are red spots in the green coordinate
-	print('Finding Spots')
-	theta = np.load(fn_align)
-	imgg,imgr = get_prepared_data(fn_data)
-	imgg,imgr = prep_imgs(imgg,imgr,theta,flags)
-
-	#### Find spots
-	g_spots_g = locate_good_localmax(imgg,flags) ## green spots in green coordinates
-	g_spots_r = locate_good_localmax(imgr,flags) ## red spots in green coordinates
-
-	if flags['refine']:
-		g_spots_g = refine_simple(imgg,g_spots_g)
-		g_spots_r = refine_simple(imgr,g_spots_r)
-
-	#### Compile spots
-	print('Compiling Spots')
 	## Combine the spots to just get those that match
-	if flags['matched_spots']: 
-		print('Only Matched Spots')
-		spots_gg,spots_rr = compare_close_spots(g_spots_g,g_spots_r,1.5) ## only keep spots with a match. 1.5 > sqrt[2]
-	else:
-		print('Non-matched Spots')
-		spots_gg = g_spots_g.copy()
-		spots_rr = g_spots_r.copy()
+	if matched_spots:
+		## First collect matches into color 0
+		for i in range(1,ncolors):
+			reduced_spots[0] = compare_close_spots(reduced_spots[0],reduced_spots[i],1.5)[0] ## only keep spots with a match. 1.5 ~ sqrt[2]
+		## Propagated matched into all other colors
+		for i in range(1,ncolors):
+			reduced_spots[i] = compare_close_spots(reduced_spots[0],reduced_spots[i],1.5)[1] ## only keep spots with a match. 1.5 ~ sqrt[2]
+		analysis.log += f'\tMatched Spots -- {",".join([f"Color {i}: {reduced_spots[i].shape[0]}" for i in range(len(reduced_spots))])}\n'
 
 	## Combine & remove duplicates
-	if flags['which'] == 'Both':
-		g_spots = np.concatenate([spots_gg,spots_rr],axis=0) ## all spots in green coordinates
-	elif flags['which'] == 'Only Green':
-		g_spots = spots_gg.copy()
-	elif flags['which'] == 'Only Red':
-		g_spots = spots_rr.copy()
+	if which == 'all':
+		good_spots = np.concatenate(reduced_spots,axis=0) ## all spots in green coordinates
+	elif which.lower().startswith('only '):
+		good_spots = reduced_spots[int(which[-1])]
 	else:
 		raise Exception('IDK which spots you want')
-	print('Spots from %s'%flags['which'])
-	g_spots = remove_close_spots(g_spots,1.5) ## combine mached spots to their average position
-
-	## Put red spots back into red space
-	inv_theta = alignment.invert_transform(theta,shape=imgg.shape,nl=40)
-	# inv_theta = np.array([0.,1.,0.,0.,0.,1.]) ## for debugging
-	order = alignment.coefficients_order(inv_theta) ## prep transform
-	a,b = alignment.coefficients_split(inv_theta) ## prep transform
-	sxr,syr = alignment.polynomial_transform_many(g_spots_r[:,0].copy(),g_spots_r[:,1].copy(),a,b,order)
-	r_spots_r = np.array((sxr,syr)).T ## red spots in green coordinates
-
-	sxr,syr = alignment.polynomial_transform_many(g_spots[:,0].copy(),g_spots[:,1].copy(),a,b,order)
-	r_spots = np.array((sxr,syr)).T ## all spots in red coordinates
+	analysis.log += (f'\tSpots from: {which}')
 	
-	keep = find_outofframe(imgr,r_spots)
-	g_spots = g_spots[keep]
-	r_spots = r_spots[keep]
+	good_spots = remove_close_spots(good_spots,1.5) ## only keep spots apart by 1.5 ~ sqrt[2]
+	analysis.log += f'\tReduced spots: {good_spots.shape[0]}\n'
 
-	if flags['refine']:
-		imgg,imgr = get_prepared_data(fn_data)
-		imgg,imgr = prep_imgs(imgg,imgr,theta,flags,align=False)
-		g_spots = refine_simple(imgg,g_spots)
-		r_spots = refine_simple(imgr,r_spots)
+	#### STEP 3
+	## Put colors i spots back from color 0 space into color i space
+	reduced_spots = [good_spots,]*ncolors
+	separate_spots = transform_back_spots(separate_spots,analysis.transforms)
+	reduced_spots = transform_back_spots(reduced_spots,analysis.transforms)
+	analysis.log += f'\tTransformed spots back to orginal color space\n'
+	
+	## Remove spots that're out of frame...
+	keep = np.isfinite(good_spots[:,0])
+	for i in range(ncolors):
+		separate_spots[i] = separate_spots[i][find_outofframe(imgs[i],separate_spots[i])]
+		keep = np.bitwise_and(keep,find_outofframe(imgs[i],reduced_spots[i]))
+	for i in range(ncolors):
+		reduced_spots[i] = reduced_spots[i][keep]
+	analysis.log += f'\tRemoved out of frame separate spots -- {",".join([f"Color {i}: {separate_spots[i].shape[0]}" for i in range(len(separate_spots))])}\n'
+	analysis.log += f'\tRemoved out of frame reduced  spots -- {",".join([f"Color {i}: {reduced_spots[i].shape[0]}" for i in range(len(reduced_spots))])}\n'
+	
+	if refine:
+		reduced_spots = [refine_simple(imgs[i],reduced_spots[i]) for i in range(ncolors)]
+		analysis.log += f'\tRefined reduced spots\n'
 
-	return g_spots_g,g_spots_r,r_spots_r,g_spots,r_spots
+	return separate_spots, np.array(reduced_spots)
 
-def make_composite_aligned(fn_data,fn_align,flags):
-	theta = np.load(fn_align)
-	imgg,imgr = get_prepared_data(fn_data)
-	imgg,imgr = prep_imgs(imgg,imgr,theta,flags)
+def make_aligned_tif(analysis: general_analysis_class, output_directory: Path, smooth: float=0.5):
+	imgs = prep_images(analysis.img, analysis.transforms, smooth)
+	ncolors = len(imgs)
+	nx,ny = imgs[0].shape
 
 	### make full transformed image
-	full = np.zeros((imgg.shape[0],imgr.shape[1]*2))
-	full[:,:imgg.shape[1]] = imgg
-	full[:,imgg.shape[1]:] = imgr
+	full = np.zeros((nx,ny*ncolors))
+	for i in range(ncolors):
+		full[:,i*ny:(i+1)*ny] = imgs[i]
+	## it's an acf image so clip on [0:1]
 	full[full<0] = 0
 	full[full>1] = 1
 	full *= 2**16
 	full = full.astype('uint16')
 
-	dirs = prepare.get_out_dir(fn_data)
-	out_dir_temp = dirs[1]
-	out_dir = dirs[3]
-
-	fn_out = os.path.join(out_dir,'composite_aligned.tif')
+	fn_out = Path(output_directory) / 'composite_aligned.tif'
 	tifffile.imwrite(fn_out, full)
+	analysis.log += f'Wrote composite aligned .tif image to: {fn_out}\n'
 
-def render_overlay(fn_data,fn_align,flags):
+def render_overlay(analysis: general_analysis_class, smooth: float):
 	#### to check the alignment of ACF images
-	theta = np.load(fn_align)
-	imgg,imgr = get_prepared_data(fn_data)
-	imgg,imgr = prep_imgs(imgg,imgr,theta,flags)
+	imgs = prep_images(analysis.img, analysis.transforms, smooth)
+	ncolors = len(imgs)
+	assert ncolors <= 3
 
-	img = alignment.nps2rgb(imgg,imgr) ## make overlay image
+	img = nps2rgb(imgs[0],imgs[0])
+	if ncolors >= 2:
+		img[:,:,0] = nps2rgb(imgs[1],imgs[1])[:,:,0] ## make overlay image to copy
+	if ncolors >= 3:
+		img[:,:,2] = nps2rgb(imgs[2],imgs[2])[:,:,2] ## make overlay image to copy
+
+	## clip on [0:1] b/c it's an ACF image
 	img[img<0] = 0
 	img[img>1] = 1
 
@@ -313,110 +113,57 @@ def render_overlay(fn_data,fn_align,flags):
 	ax.set_title('Overlay')
 	return fig,ax
 
-def render_found_maxes(fn_data,fn_align,g_spots_g,g_spots_r,flags):
+def render_found_maxes(analysis: general_analysis_class, spots):
+	#### plots [np.ndarrays...] not analysis.spots
 	#### to make sure all found spots in original coordinates are good
-	imgg,imgr = get_prepared_data(fn_data)
-	theta = np.load(fn_align)
-	imgg,imgr = prep_imgs(imgg,imgr,theta,flags)
+	ncolors = analysis.img.shape[0]
+	assert len(spots) == ncolors
 
-	fig,ax = plt.subplots(1,2,sharex=True,sharey=True)
-	
-	ax[0].imshow(imgg,cmap='Greys_r',vmin=0,vmax=1,interpolation='nearest')
-	ax[1].imshow(imgr,cmap='Greys_r',vmin=0,vmax=1,interpolation='nearest')
-	ax[0].scatter(g_spots_g[:,1],g_spots_g[:,0],edgecolor='tab:green',alpha=.5,facecolor='none')
-	ax[1].scatter(g_spots_r[:,1],g_spots_r[:,0],edgecolor='tab:red',alpha=.5,facecolor='none')
-	
+	color_cycle = ['tab:green','tab:red',]
+	fig,ax = plt.subplots(1,ncolors,sharex=True,sharey=True)	
+	for i in range(ncolors):
+		ax[i].imshow(analysis.img[i],cmap='Greys_r',vmin=0,vmax=1,interpolation='nearest')
+		if i < len(color_cycle):
+			ax[i].scatter(spots[i][:,1],spots[i][:,0],alpha=.5,facecolor='none',edgecolor=color_cycle[i],)
+		else:
+			ax[i].scatter(spots[i][:,1],spots[i][:,0],alpha=.5,facecolor='none')
+		ax[i].set_title(f'Color {i}')
 	[aa.set_axis_off() for aa in ax]
-	ax[0].set_title('Green')
-	ax[1].set_title('Red')
 	return fig,ax
 
-def render_final_spots(fn_data,g_spots,r_spots,flags):
+def render_final_spots(analysis: general_analysis_class, spots):
+	#### plots [np.ndarrays...] not analysis.spots
 	#### to check that final spots are good
-	imgg,imgr = get_prepared_data(fn_data)
+	ncolors = analysis.img.shape[0]
 	
-	fig,ax = plt.subplots(1,2,sharex=True,sharey=True)
-	ax[0].imshow(imgg,cmap='Greys_r',vmin=0,vmax=1,interpolation='nearest')
-	ax[1].imshow(imgr,cmap='Greys_r',vmin=0,vmax=1,interpolation='nearest')
-
-	ax[0].scatter(g_spots[:,1],g_spots[:,0],edgecolor='tab:orange',alpha=.5,facecolor='none')
-	ax[1].scatter(r_spots[:,1],r_spots[:,0],edgecolor='tab:orange',alpha=.5,facecolor='none')
-
+	fig,ax = plt.subplots(1,ncolors,sharex=True,sharey=True)
+	for i in range(ncolors):
+		ax[i].imshow(analysis.img[i],cmap='Greys_r',vmin=0,vmax=1,interpolation='nearest')
+		ax[i].scatter(spots[i][:,1],spots[i][:,0],edgecolor='tab:orange',alpha=.5,facecolor='none')
+		ax[i].set_title(f'Color {i+1}')
 	[aa.set_axis_off() for aa in ax]
-	ax[0].set_title('Green')
-	ax[1].set_title('Red')
+	
 	return fig,ax
 
-def save_spots(fn_data,g_spots_g,g_spots_r,r_spots_r,g_spots,r_spots):
-	dirs = prepare.get_out_dir(fn_data)
-	out_dir_temp = dirs[1]
-	out_dir = dirs[3]
+def run_spotfind(
+		analysis: general_analysis_class,
+		acf_cutoff: float=0.15,
+		matched_spots: bool=True,
+		smooth: float=0.5,
+		which: str="all",
+		localmax_region: int=1,
+		refine: bool=True,
+	):
 
-	np.save(os.path.join(out_dir_temp,'%s.npy'%('g_spots_g')),g_spots_g)
-	np.save(os.path.join(out_dir_temp,'%s.npy'%('g_spots_r')),g_spots_r)
-	np.save(os.path.join(out_dir_temp,'%s.npy'%('r_spots_r')),r_spots_r)
-	np.save(os.path.join(out_dir_temp,'%s.npy'%('g_spots')),g_spots)
-	np.save(os.path.join(out_dir_temp,'%s.npy'%('r_spots')),r_spots)
+	separate_spots,reduced_spots = find_spots(analysis, smooth, localmax_region, acf_cutoff, refine, matched_spots, which)
+	analysis.spots = reduced_spots
 
-def safe_align(fn_data, fn_align):
-	## There is a chance the user didn't give an alignment. 
-
-	import tempfile
-	from .modelselect_alignment import alignment_guess_coefficients 
-	
-	if fn_align == '': 
-		dg,dr = get_prepared_data(fn_data)
-		theta = alignment_guess_coefficients(dr,dg) ## make a Fourier guess....
-		with tempfile.NamedTemporaryFile(delete=False, suffix='.npy') as temp_file:
-			np.save(temp_file, theta)
-			fn_align = temp_file.name
-	return fn_align
-
-def run_job_prepare(job):
-	fn_data = job['fn_data']
-	fn_align = job['fn_align']
-	fn_cal = job['fn_cal']
-	flags = job
-
-	dirs = prepare.get_out_dir(fn_data)
-	dir_spotfinder = dirs[3]
-
-	prepare_data(fn_data,fn_cal,flags)
-	fn_align = safe_align(fn_data,fn_align)
-	make_composite_aligned(fn_data,fn_align,flags)
-
-	fig,ax = render_overlay(fn_data,fn_align,flags)
-	fig.set_figheight(8.)
-	fig.set_figwidth(8.)
-	[plt.savefig(os.path.join(dir_spotfinder,'overlay.%s'%(ext))) for ext in ['png','pdf']]
-
-	prepare.dump_job(os.path.join(dir_spotfinder,'job_prepare.txt'),'Job Name: Prepare for Spotfinding',job)
-
-	return fig
-
-def run_job_spotfind(job):
-	fn_data = job['fn_data']
-	fn_align = job['fn_align']
-	flags = job
-
-	dirs = prepare.get_out_dir(fn_data)
-	fn_align = safe_align(fn_data,fn_align)
-
-	dir_spotfinder = dirs[3]
-
-	g_spots_g,g_spots_r,r_spots_r,g_spots,r_spots = find_spots(fn_data,fn_align,flags)
-	save_spots(fn_data,g_spots_g,g_spots_r,r_spots_r,g_spots,r_spots)
-	
-	fig1,ax1 = render_found_maxes(fn_data,fn_align,g_spots_g,g_spots_r,flags)
+	fig1,ax1 = render_found_maxes(analysis,separate_spots)
 	fig1.set_figheight(8.)
 	fig1.set_figwidth(8.)
-	[plt.savefig(os.path.join(dir_spotfinder,'spots_all.%s'%(ext))) for ext in ['png','pdf']]
-
-	fig2,ax2 = render_final_spots(fn_data,g_spots,r_spots,flags)
+	
+	fig2,ax2 = render_final_spots(analysis,reduced_spots)
 	fig2.set_figheight(8.)
 	fig2.set_figwidth(8.)
-	[plt.savefig(os.path.join(dir_spotfinder,'spots_final.%s'%(ext))) for ext in ['png','pdf']]
-
-	prepare.dump_job(os.path.join(dir_spotfinder,'job_spotfind.txt'),'Job Name: Spotfinding',job)
 
 	return fig1,fig2

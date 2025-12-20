@@ -79,6 +79,7 @@ def render_model(origin,dxy,nxy,xy,weights,sigma,nsigma_cutoff,offset):
 						c = (erf((di+oxh)/r2ss) - erf((di+oxl)/r2ss))
 						c *= (erf((dj+oyh)/r2ss) - erf((dj+oyl)/r2ss))
 						dmodel[ii,ji] += .25*c*weights[atomi]
+
 	return dmodel
 
 def density_point(grid,point,weight=1.,sigma=.7,nsigma=5,offset=0.5):

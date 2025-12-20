@@ -102,6 +102,11 @@ def polynomial_transform(x1,y1,a,b,K):
 @nb.njit(nogil=True,parallel=True,fastmath=True,cache=True)
 def rev_interpolate_polynomial(q,a,b):
 	'''
+	quick-take:
+		if you have transform \theta_ij from color i to color j,
+		and you want to transform I_i into I_j,
+		this function actually uses \theta_ji
+
 	Okay a little confusing, but the easiest way to transform an image is actually to work backwards.
 	1. Loop over final coordinates (x',y').
 	2. Use reverse transform (x',y') to (x,y) [note: this is a completely different transform!!! i.e., \theta^\prime not \theta]
@@ -383,14 +388,6 @@ def alignment_guess_coefficients(d1,d2):
 	## get linear shift from upscaled FT
 	dx_12,dy_12 = alignment_upscaled_fft_phase(d1,d2)
 
-	# ## Make grid +/-1, 20 by 20 points = .05 resolution
-	# ca,cb = coefficients_split(coef_fft)
-	# # xs = np.linspace(ca[0]-1.,ca[0]+1.,20)
-	# # ys = np.linspace(cb[0]-1.,cb[0]+1.,20)
-	# #
-	# # # get MAP solution on local grid
-	# # coef_grid = alignment_grid_evidence_linearshift(d1,d2,xs,ys)
-	# # ca,cb = coefficients_split(coef_grid)
 	a[0] = dx_12
 	b[0] = dy_12
 
@@ -425,8 +422,9 @@ def alignment_max_evidence_polynomial(d1,d2,guess,maxiter=5000,progressbar=True,
 
 def nps2rgb(g,r):
 	imgrgb = np.zeros((g.shape[0],g.shape[1],3))
-	imgrgb[:,:,1] = g/np.percentile(g[5:-5,5:-5],99)
-	imgrgb[:,:,0] = r/np.percentile(r[5:-5,5:-5],99)
+	pad = 10
+	imgrgb[:,:,1] = g/np.percentile(g[pad:-pad,pad:-pad],95)
+	imgrgb[:,:,0] = r/np.percentile(r[pad:-pad,pad:-pad],95)
 	return imgrgb
 
 def downscale_img(x):
