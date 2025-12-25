@@ -36,28 +36,16 @@ pip install git+https://github.com/ckinzthompson/highfret.git
 
 #### GUI
 
-Follow along with these videos:
-
-Align the color channels, find spots, then extract traces
-
-![prepare](https://github.com/user-attachments/assets/d4bbfeec-5076-4dec-b915-dd3d50fdb8e1)
-
-Load traces into [tMAVEN](https://gonzalezbiophysicslab.github.io/tmaven/)
-
-![anlysis](https://github.com/user-attachments/assets/47d8084c-fbe3-4370-9bd7-2816c97143e0)
+Watch these videos:
+1. [Align the color channels, find spots, then extract traces](https://github.com/ckinzthompson/highfret/blob/cb11d2a98dd3100f265e34019a62cad93e825d55/docs/movies/movie_processing.mp4)
+2. [Load traces into tMAVEN](https://github.com/ckinzthompson/highfret/blob/cb11d2a98dd3100f265e34019a62cad93e825d55/docs/movies/movie_analysis.mp4)
 
 #### CLI
 
-After installing the `highfret` python package, you will have access to the CLI program `highfret`. Follow along with this video:
+After installing the `highfret` python package, you will have access to the CLI program `highfret`. Follow along with these video:
 
-![cli](https://github.com/user-attachments/assets/d4b24803-42a6-44f8-beb7-47c14eadd3d8)
-
-If you want to copy the alignment from one analysis to another you can use the copy function
-
-![cli_copy](https://github.com/user-attachments/assets/8537a246-a782-49ba-b50b-2b93b2eecc6c)
-
-or for example just `cp` from movie 5 to movie 4:
-`cp highfret_5/transforms.npy highfret_4/tranforms.npy`
+1. [Align the color channels, find spots, then extract traces](https://github.com/ckinzthompson/highfret/blob/cb11d2a98dd3100f265e34019a62cad93e825d55/docs/movies/movie_cli.mp4)
+2. If you want to [copy the alignment from one analysis to another you can use the copy function](https://github.com/ckinzthompson/highfret/blob/cb11d2a98dd3100f265e34019a62cad93e825d55/docs/movies/movie_cli_copy.mp4)
 
 #### Stage 1 - Alignment
 
